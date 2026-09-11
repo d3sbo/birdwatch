@@ -73,31 +73,11 @@ docker compose run --rm birdwatch nvidia-smi
 
 ## Node-RED Setup (Home Assistant)
 
-### Install the Docker control package
+### Starting and stopping the container
 
-In the Node-RED addon, go to the palette manager and install:
-```
-node-red-contrib-dockerode
-```
+The flow starts and stops BirdWatch by calling a small HTTP listener on the Docker host, `docker-control.ps1` (it lives in the [talking-head-ditto](https://github.com/d3sbo/talking-head-ditto/tree/main/windows) repo). Set an environment variable `DOCKER_DESKTOP` in the Node-RED add-on to its address, for example `http://192.168.1.20:2376`. The flow calls `/start-birdwatch` and `/stop-birdwatch`.
 
-### Mount the Docker socket into Node-RED
-
-In your Home Assistant `config/node-red/settings.js`, or via the add-on config, you need the Docker socket available. For the Node-RED add-on, add this to your add-on configuration:
-
-```yaml
-# In the Node-RED add-on options
-env_vars:
-  - name: NODE_RED_ENABLE_PROJECTS
-    value: "false"
-```
-
-And configure the Docker socket by editing the add-on's docker run options (via the Terminal add-on):
-```bash
-# This mounts the Docker socket read-only into the Node-RED container
-# You may need to use Portainer or SSH for this depending on your setup
-```
-
-> **Alternative:** If mounting the Docker socket is tricky in your HA setup, use the **soft pause/resume** approach in the Node-RED flow instead — it calls `/api/control` on the birdwatch container to pause/resume detection without stopping the container. This is often more practical.
+If you'd rather not run that listener, use the soft pause/resume nodes instead: they call `/api/control` on the running container and never stop it.
 
 ### Import the flow
 
@@ -115,6 +95,15 @@ And configure the Docker socket by editing the add-on's docker run options (via 
 - **MQTT listener** that turns each bird detection into a Home Assistant event
 - **HA sensor** `sensor.last_bird_detected` updated on every detection
 - **Soft pause/resume** via the `/api/control` REST endpoint
+
+### Home Assistant dashboard
+
+- `home-assistant/helpers.yaml` creates the `input_button.start_birdwatch` / `stop_birdwatch` buttons the flow listens for.
+- `home-assistant/dashboard-birdwatch.yaml` has cards showing the last bird, camera, confidence and status, plus the start/stop buttons. It uses only built-in cards.
+- `home-assistant/dashboard-birdwatch-retro.yaml` has the same cards in a green-on-black terminal style. It needs the `custom:button-card` card from HACS.
+- `home-assistant/dashboard-birdwatch-iframe.yaml` is a whole dashboard that just embeds the BirdWatch web UI.
+
+The `sensor.birdwatch_*` entities come from the app's MQTT discovery, so they appear on their own once MQTT is configured.
 
 ### Home Assistant automation example
 
