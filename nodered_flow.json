@@ -1,471 +1,608 @@
 [
-  {
-    "id": "birdwatch-tab",
-    "type": "tab",
-    "label": "BirdWatch",
-    "disabled": false,
-    "info": "Uses the same DockerControl HTTP API pattern as your other containers.\nRegister /start-birdwatch and /stop-birdwatch in your DockerControl service."
-  },
-  {
-    "id": "comment-control",
-    "type": "comment",
-    "z": "birdwatch-tab",
-    "name": "\u2500\u2500 Container Start / Stop (via DockerControl) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500",
-    "info": "",
-    "x": 220,
-    "y": 60
-  },
-  {
-    "id": "ha-start-trigger",
-    "type": "inject",
-    "z": "birdwatch-tab",
-    "name": "\u25b6 Start BirdWatch",
-    "props": [
-      {
-        "p": "payload"
-      }
-    ],
-    "repeat": "",
-    "crontab": "",
-    "once": false,
-    "payload": "start",
-    "payloadType": "str",
-    "x": 160,
-    "y": 120,
-    "wires": [
-      [
-        "fn-start-container"
-      ]
-    ]
-  },
-  {
-    "id": "ha-stop-trigger",
-    "type": "inject",
-    "z": "birdwatch-tab",
-    "name": "\u23f9 Stop BirdWatch",
-    "props": [
-      {
-        "p": "payload"
-      }
-    ],
-    "repeat": "",
-    "crontab": "",
-    "once": false,
-    "payload": "stop",
-    "payloadType": "str",
-    "x": 160,
-    "y": 180,
-    "wires": [
-      [
-        "fn-stop-container"
-      ]
-    ]
-  },
-  {
-    "id": "comment-schedule",
-    "type": "comment",
-    "z": "birdwatch-tab",
-    "name": "\u2500\u2500 Scheduled (adjust cron times for your season) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500",
-    "info": "",
-    "x": 220,
-    "y": 240
-  },
-  {
-    "id": "schedule-start",
-    "type": "inject",
-    "z": "birdwatch-tab",
-    "name": "Dawn (05:00)",
-    "props": [
-      {
-        "p": "payload"
-      }
-    ],
-    "repeat": "",
-    "crontab": "00 05 * * *",
-    "once": false,
-    "payload": "start",
-    "payloadType": "str",
-    "x": 150,
-    "y": 300,
-    "wires": [
-      [
-        "fn-start-container"
-      ]
-    ]
-  },
-  {
-    "id": "schedule-stop",
-    "type": "inject",
-    "z": "birdwatch-tab",
-    "name": "Dusk (21:30)",
-    "props": [
-      {
-        "p": "payload"
-      }
-    ],
-    "repeat": "",
-    "crontab": "30 21 * * *",
-    "once": false,
-    "payload": "stop",
-    "payloadType": "str",
-    "x": 150,
-    "y": 360,
-    "wires": [
-      [
-        "fn-stop-container"
-      ]
-    ]
-  },
-  {
-    "id": "fn-start-container",
-    "type": "function",
-    "z": "birdwatch-tab",
-    "name": "Start Container",
-    "func": "msg.url = env.get(\"DOCKER_DESKTOP\") + \"/start-birdwatch\";\nmsg.method = \"GET\";\nmsg.headers = {};\nnode.warn(\"Starting birdwatch container via DockerControl...\");\nreturn msg;",
-    "outputs": 1,
-    "timeout": 0,
-    "noerr": 0,
-    "initialize": "",
-    "finalize": "",
-    "libs": [],
-    "x": 410,
-    "y": 210,
-    "wires": [
-      [
-        "http-start"
-      ]
-    ]
-  },
-  {
-    "id": "fn-stop-container",
-    "type": "function",
-    "z": "birdwatch-tab",
-    "name": "Stop Container",
-    "func": "msg.url = env.get(\"DOCKER_DESKTOP\") + \"/stop-birdwatch\";\nmsg.method = \"GET\";\nmsg.headers = {};\nnode.warn(\"Stopping birdwatch container via DockerControl...\");\nreturn msg;",
-    "outputs": 1,
-    "timeout": 0,
-    "noerr": 0,
-    "initialize": "",
-    "finalize": "",
-    "libs": [],
-    "x": 410,
-    "y": 330,
-    "wires": [
-      [
-        "http-stop"
-      ]
-    ]
-  },
-  {
-    "id": "http-start",
-    "type": "http request",
-    "z": "birdwatch-tab",
-    "name": "DockerControl Start",
-    "method": "use",
-    "ret": "txt",
-    "paytoqs": "ignore",
-    "url": "",
-    "tls": "",
-    "persist": false,
-    "proxy": "",
-    "insecureHTTPParser": false,
-    "authType": "",
-    "senderr": true,
-    "headers": [],
-    "x": 630,
-    "y": 210,
-    "wires": [
-      [
-        "docker-result-log"
-      ]
-    ]
-  },
-  {
-    "id": "http-stop",
-    "type": "http request",
-    "z": "birdwatch-tab",
-    "name": "DockerControl Stop",
-    "method": "use",
-    "ret": "txt",
-    "paytoqs": "ignore",
-    "url": "",
-    "tls": "",
-    "persist": false,
-    "proxy": "",
-    "insecureHTTPParser": false,
-    "authType": "",
-    "senderr": true,
-    "headers": [],
-    "x": 630,
-    "y": 330,
-    "wires": [
-      [
-        "docker-result-log"
-      ]
-    ]
-  },
-  {
-    "id": "docker-result-log",
-    "type": "debug",
-    "z": "birdwatch-tab",
-    "name": "DockerControl result",
-    "active": true,
-    "tosidebar": true,
-    "x": 860,
-    "y": 270,
-    "wires": []
-  },
-  {
-    "id": "comment-mqtt",
-    "type": "comment",
-    "z": "birdwatch-tab",
-    "name": "\u2500\u2500 MQTT: Detections \u2192 HA Events \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500",
-    "info": "",
-    "x": 200,
-    "y": 430
-  },
-  {
-    "id": "mqtt-detection-in",
-    "type": "mqtt in",
-    "z": "birdwatch-tab",
-    "name": "birdwatch/detection",
-    "topic": "birdwatch/detection",
-    "qos": "0",
-    "datatype": "json",
-    "broker": "mqtt-broker-config",
-    "x": 170,
-    "y": 490,
-    "wires": [
-      [
-        "parse-detection"
-      ]
-    ]
-  },
-  {
-    "id": "parse-detection",
-    "type": "function",
-    "z": "birdwatch-tab",
-    "name": "Format for HA",
-    "func": "const d = msg.payload;\nconst confidence = Math.round(d.confidence * 100);\nmsg.payload = {\n    event_type: 'bird_detected',\n    event_data: {\n        common_name: d.common_name,\n        species:     d.species,\n        confidence:  confidence,\n        camera:      d.camera,\n        timestamp:   d.timestamp\n    }\n};\nreturn msg;",
-    "outputs": 1,
-    "timeout": 0,
-    "noerr": 0,
-    "initialize": "",
-    "finalize": "",
-    "libs": [],
-    "x": 390,
-    "y": 490,
-    "wires": [
-      [
-        "ha-fire-event",
-        "update-sensor",
-        "detection-debug"
-      ]
-    ]
-  },
-  {
-    "id": "ha-fire-event",
-    "type": "api-call-service",
-    "z": "birdwatch-tab",
-    "name": "Fire HA event",
-    "server": "ha-server",
-    "version": 5,
-    "debugenabled": false,
-    "domain": "homeassistant",
-    "service": "fire_event",
-    "areaId": [],
-    "deviceId": [],
-    "entityId": [],
-    "data": "{\"event_type\": \"bird_detected\", \"event_data\": {{payload.event_data}}}",
-    "dataType": "jsonata",
-    "mergeContext": "",
-    "mustacheAltTags": false,
-    "outputProperties": [],
-    "queue": "none",
-    "x": 620,
-    "y": 470,
-    "wires": [
-      []
-    ]
-  },
-  {
-    "id": "update-sensor",
-    "type": "function",
-    "z": "birdwatch-tab",
-    "name": "Update HA sensor",
-    "func": "const d = msg.payload.event_data;\nmsg.payload = {\n    state: d.common_name,\n    attributes: {\n        species:       d.species,\n        confidence:    d.confidence + '%',\n        camera:        d.camera,\n        last_seen:     d.timestamp,\n        friendly_name: 'Last Bird Detected'\n    }\n};\nreturn msg;",
-    "outputs": 1,
-    "timeout": 0,
-    "noerr": 0,
-    "initialize": "",
-    "finalize": "",
-    "libs": [],
-    "x": 620,
-    "y": 530,
-    "wires": [
-      [
-        "ha-entity-update"
-      ]
-    ]
-  },
-  {
-    "id": "ha-entity-update",
-    "type": "ha-entity",
-    "z": "birdwatch-tab",
-    "name": "last_bird_detected",
-    "server": "ha-server",
-    "version": 2,
-    "debugenabled": false,
-    "outputs": 1,
-    "entityType": "sensor",
-    "config": [
-      {
-        "property": "name",
-        "value": "Last Bird Detected"
-      },
-      {
-        "property": "device_class",
-        "value": ""
-      },
-      {
-        "property": "icon",
-        "value": "mdi:bird"
-      },
-      {
-        "property": "unit_of_measurement",
-        "value": ""
-      }
-    ],
-    "resend": true,
-    "outputLocation": "payload",
-    "outputLocationType": "msg",
-    "inputOverride": "allow",
-    "outputOnStateChange": false,
-    "x": 840,
-    "y": 530,
-    "wires": [
-      []
-    ]
-  },
-  {
-    "id": "detection-debug",
-    "type": "debug",
-    "z": "birdwatch-tab",
-    "name": "Detection log",
-    "active": true,
-    "tosidebar": true,
-    "x": 620,
-    "y": 590,
-    "wires": []
-  },
-  {
-    "id": "comment-pause",
-    "type": "comment",
-    "z": "birdwatch-tab",
-    "name": "\u2500\u2500 Soft Pause / Resume (no container restart needed) \u2500\u2500\u2500\u2500",
-    "info": "Calls the BirdWatch REST API to pause/resume without stopping the container.\nThe BirdNET model stays loaded in GPU memory \u2014 much faster to resume.",
-    "x": 220,
-    "y": 650
-  },
-  {
-    "id": "pause-inject",
-    "type": "inject",
-    "z": "birdwatch-tab",
-    "name": "\u23f8 Pause detection",
-    "props": [
-      {
-        "p": "payload"
-      }
-    ],
-    "payload": "{\"action\":\"pause\"}",
-    "payloadType": "json",
-    "x": 160,
-    "y": 710,
-    "wires": [
-      [
-        "http-soft-control"
-      ]
-    ]
-  },
-  {
-    "id": "resume-inject",
-    "type": "inject",
-    "z": "birdwatch-tab",
-    "name": "\u25b6 Resume detection",
-    "props": [
-      {
-        "p": "payload"
-      }
-    ],
-    "payload": "{\"action\":\"resume\"}",
-    "payloadType": "json",
-    "x": 160,
-    "y": 770,
-    "wires": [
-      [
-        "http-soft-control"
-      ]
-    ]
-  },
-  {
-    "id": "http-soft-control",
-    "type": "http request",
-    "z": "birdwatch-tab",
-    "name": "POST /api/control",
-    "method": "POST",
-    "ret": "obj",
-    "paytoqs": "ignore",
-    "url": "http://birdwatch:8080/api/control",
-    "tls": "",
-    "persist": false,
-    "proxy": "",
-    "insecureHTTPParser": false,
-    "authType": "",
-    "sendAs": "application/json",
-    "x": 400,
-    "y": 740,
-    "wires": [
-      [
-        "soft-control-debug"
-      ]
-    ]
-  },
-  {
-    "id": "soft-control-debug",
-    "type": "debug",
-    "z": "birdwatch-tab",
-    "name": "Soft control result",
-    "active": true,
-    "tosidebar": true,
-    "x": 610,
-    "y": 740,
-    "wires": []
-  },
-  {
-    "id": "mqtt-broker-config",
-    "type": "mqtt-broker",
-    "name": "Home Assistant MQTT",
-    "broker": "192.168.1.10",
-    "port": "1883",
-    "clientid": "nodered-birdwatch",
-    "autoConnect": true,
-    "usetls": false,
-    "protocolVersion": "4",
-    "keepalive": "60",
-    "cleansession": true,
-    "credentials": {
-      "user": "homeassistant",
-      "password": ""
+    {
+        "id": "birdwatch-tab",
+        "type": "tab",
+        "label": "BirdWatch",
+        "disabled": false,
+        "info": "Uses the same DockerControl HTTP API pattern as your other containers.\nRegister /start-birdwatch and /stop-birdwatch in your DockerControl service."
+    },
+    {
+        "id": "comment-control",
+        "type": "comment",
+        "z": "birdwatch-tab",
+        "name": "── Container Start / Stop (via DockerControl) ──────────",
+        "info": "",
+        "x": 440,
+        "y": 140,
+        "wires": []
+    },
+    {
+        "id": "ha-start-trigger",
+        "type": "inject",
+        "z": "birdwatch-tab",
+        "name": "▶ Start BirdWatch",
+        "props": [
+            {
+                "p": "payload"
+            }
+        ],
+        "repeat": "",
+        "crontab": "",
+        "once": false,
+        "payload": "start",
+        "payloadType": "str",
+        "x": 370,
+        "y": 200,
+        "wires": [
+            [
+                "fn-start-container"
+            ]
+        ]
+    },
+    {
+        "id": "ha-stop-trigger",
+        "type": "inject",
+        "z": "birdwatch-tab",
+        "name": "⏹ Stop BirdWatch",
+        "props": [
+            {
+                "p": "payload"
+            }
+        ],
+        "repeat": "",
+        "crontab": "",
+        "once": false,
+        "payload": "stop",
+        "payloadType": "str",
+        "x": 370,
+        "y": 260,
+        "wires": [
+            [
+                "fn-stop-container"
+            ]
+        ]
+    },
+    {
+        "id": "schedule-start",
+        "type": "inject",
+        "z": "birdwatch-tab",
+        "d": true,
+        "name": "Dawn (05:00)",
+        "props": [
+            {
+                "p": "payload"
+            }
+        ],
+        "repeat": "",
+        "crontab": "00 05 * * *",
+        "once": false,
+        "payload": "start",
+        "payloadType": "str",
+        "x": 380,
+        "y": 380,
+        "wires": [
+            [
+                "fn-start-container"
+            ]
+        ]
+    },
+    {
+        "id": "schedule-stop",
+        "type": "inject",
+        "z": "birdwatch-tab",
+        "d": true,
+        "name": "Dusk (21:30)",
+        "props": [
+            {
+                "p": "payload"
+            }
+        ],
+        "repeat": "",
+        "crontab": "30 21 * * *",
+        "once": false,
+        "payload": "stop",
+        "payloadType": "str",
+        "x": 380,
+        "y": 440,
+        "wires": [
+            [
+                "fn-stop-container"
+            ]
+        ]
+    },
+    {
+        "id": "fn-start-container",
+        "type": "function",
+        "z": "birdwatch-tab",
+        "name": "Start Container",
+        "func": "msg.url = env.get(\"DOCKER_DESKTOP\") + \"/start-birdwatch\";\nmsg.method = \"GET\";\nmsg.headers = {};\nnode.warn(\"Starting birdwatch container via DockerControl...\");\nreturn msg;",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 820,
+        "y": 320,
+        "wires": [
+            [
+                "http-start"
+            ]
+        ]
+    },
+    {
+        "id": "fn-stop-container",
+        "type": "function",
+        "z": "birdwatch-tab",
+        "name": "Stop Container",
+        "func": "msg.url = env.get(\"DOCKER_DESKTOP\") + \"/stop-birdwatch\";\nmsg.method = \"GET\";\nmsg.headers = {};\nnode.warn(\"Stopping birdwatch container via DockerControl...\");\nreturn msg;",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 820,
+        "y": 480,
+        "wires": [
+            [
+                "http-stop"
+            ]
+        ]
+    },
+    {
+        "id": "http-start",
+        "type": "http request",
+        "z": "birdwatch-tab",
+        "name": "DockerControl Start",
+        "method": "use",
+        "ret": "txt",
+        "paytoqs": "ignore",
+        "url": "",
+        "tls": "",
+        "persist": false,
+        "proxy": "",
+        "insecureHTTPParser": false,
+        "authType": "",
+        "senderr": true,
+        "headers": [],
+        "x": 1130,
+        "y": 320,
+        "wires": [
+            [
+                "docker-result-log"
+            ]
+        ]
+    },
+    {
+        "id": "http-stop",
+        "type": "http request",
+        "z": "birdwatch-tab",
+        "name": "DockerControl Stop",
+        "method": "use",
+        "ret": "txt",
+        "paytoqs": "ignore",
+        "url": "",
+        "tls": "",
+        "persist": false,
+        "proxy": "",
+        "insecureHTTPParser": false,
+        "authType": "",
+        "senderr": true,
+        "headers": [],
+        "x": 1130,
+        "y": 480,
+        "wires": [
+            [
+                "docker-result-log"
+            ]
+        ]
+    },
+    {
+        "id": "docker-result-log",
+        "type": "debug",
+        "z": "birdwatch-tab",
+        "name": "DockerControl result",
+        "active": true,
+        "tosidebar": true,
+        "x": 1380,
+        "y": 400,
+        "wires": []
+    },
+    {
+        "id": "comment-mqtt",
+        "type": "comment",
+        "z": "birdwatch-tab",
+        "name": "── MQTT: Detections → HA Events ────────────────────────",
+        "info": "",
+        "x": 480,
+        "y": 720,
+        "wires": []
+    },
+    {
+        "id": "mqtt-detection-in",
+        "type": "mqtt in",
+        "z": "birdwatch-tab",
+        "name": "birdwatch/detection",
+        "topic": "birdwatch/detection",
+        "qos": "0",
+        "datatype": "json",
+        "broker": "mqtt-broker-config",
+        "inputs": 0,
+        "x": 370,
+        "y": 780,
+        "wires": [
+            [
+                "parse-detection"
+            ]
+        ]
+    },
+    {
+        "id": "parse-detection",
+        "type": "function",
+        "z": "birdwatch-tab",
+        "name": "Format for HA",
+        "func": "const d = msg.payload;\nconst confidence = Math.round(d.confidence * 100);\nmsg.payload = {\n    event_type: 'bird_detected',\n    event_data: {\n        common_name: d.common_name,\n        species:     d.species,\n        confidence:  confidence,\n        camera:      d.camera,\n        timestamp:   d.timestamp\n    }\n};\nreturn msg;",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 660,
+        "y": 780,
+        "wires": [
+            [
+                "update-sensor",
+                "detection-debug",
+                "ha-fire-event"
+            ]
+        ]
+    },
+    {
+        "id": "update-sensor",
+        "type": "function",
+        "z": "birdwatch-tab",
+        "name": "Update HA sensor",
+        "func": "const d = msg.payload.event_data;\nmsg.payload = {\n    state: d.common_name,\n    attributes: {\n        species:       d.species,\n        confidence:    d.confidence + '%',\n        camera:        d.camera,\n        last_seen:     d.timestamp,\n        friendly_name: 'Last Bird Detected'\n    }\n};\nreturn msg;",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 970,
+        "y": 780,
+        "wires": [
+            [
+                "82d4a11b5de52eb5"
+            ]
+        ]
+    },
+    {
+        "id": "detection-debug",
+        "type": "debug",
+        "z": "birdwatch-tab",
+        "name": "Detection log",
+        "active": true,
+        "tosidebar": true,
+        "x": 950,
+        "y": 840,
+        "wires": []
+    },
+    {
+        "id": "comment-pause",
+        "type": "comment",
+        "z": "birdwatch-tab",
+        "name": "── Soft Pause / Resume (no container restart needed) ────",
+        "info": "Calls the BirdWatch REST API to pause/resume without stopping the container.\nThe BirdNET model stays loaded in GPU memory — much faster to resume.",
+        "x": 440,
+        "y": 900,
+        "wires": []
+    },
+    {
+        "id": "pause-inject",
+        "type": "inject",
+        "z": "birdwatch-tab",
+        "name": "⏸ Pause detection",
+        "props": [
+            {
+                "p": "payload"
+            }
+        ],
+        "repeat": "",
+        "crontab": "",
+        "once": false,
+        "onceDelay": "",
+        "topic": "",
+        "payload": "{\"action\":\"pause\"}",
+        "payloadType": "json",
+        "x": 370,
+        "y": 960,
+        "wires": [
+            [
+                "http-soft-control"
+            ]
+        ]
+    },
+    {
+        "id": "resume-inject",
+        "type": "inject",
+        "z": "birdwatch-tab",
+        "name": "▶ Resume detection",
+        "props": [
+            {
+                "p": "payload"
+            }
+        ],
+        "repeat": "",
+        "crontab": "",
+        "once": false,
+        "onceDelay": "",
+        "topic": "",
+        "payload": "{\"action\":\"resume\"}",
+        "payloadType": "json",
+        "x": 370,
+        "y": 1040,
+        "wires": [
+            [
+                "http-soft-control"
+            ]
+        ]
+    },
+    {
+        "id": "http-soft-control",
+        "type": "http request",
+        "z": "birdwatch-tab",
+        "name": "POST /api/control",
+        "method": "POST",
+        "ret": "obj",
+        "paytoqs": "ignore",
+        "url": "http://birdwatch:8080/api/control",
+        "tls": "",
+        "persist": false,
+        "proxy": "",
+        "insecureHTTPParser": false,
+        "authType": "",
+        "x": 670,
+        "y": 1000,
+        "wires": [
+            [
+                "soft-control-debug"
+            ]
+        ]
+    },
+    {
+        "id": "soft-control-debug",
+        "type": "debug",
+        "z": "birdwatch-tab",
+        "name": "Soft control result",
+        "active": true,
+        "tosidebar": true,
+        "x": 970,
+        "y": 1000,
+        "wires": []
+    },
+    {
+        "id": "82d4a11b5de52eb5",
+        "type": "ha-sensor",
+        "z": "birdwatch-tab",
+        "name": "last_bird_detected",
+        "entityConfig": "ha-entity-update",
+        "version": 0,
+        "state": "payload",
+        "stateType": "msg",
+        "attributes": [],
+        "inputOverride": "allow",
+        "outputProperties": [
+            {
+                "property": "payload",
+                "propertyType": "msg",
+                "value": "",
+                "valueType": "data"
+            }
+        ],
+        "x": 1210,
+        "y": 780,
+        "wires": [
+            []
+        ]
+    },
+    {
+        "id": "ha-fire-event",
+        "type": "ha-fire-event",
+        "z": "birdwatch-tab",
+        "name": "Fire bird_detected",
+        "server": "2f3e415f.67836e",
+        "version": 1,
+        "event": "bird_detected",
+        "data": "{\"common_name\": payload.event_data.common_name, \"species\": payload.event_data.species, \"confidence\": payload.event_data.confidence, \"camera\": payload.event_data.camera, \"timestamp\": payload.event_data.timestamp}",
+        "dataType": "jsonata",
+        "x": 970,
+        "y": 720,
+        "wires": [
+            []
+        ]
+    },
+    {
+        "id": "bw-trigger-start",
+        "type": "trigger-state",
+        "z": "birdwatch-tab",
+        "name": "Start BirdWatch Button",
+        "server": "2f3e415f.67836e",
+        "version": 5,
+        "inputs": 0,
+        "outputs": 2,
+        "exposeAsEntityConfig": "",
+        "entities": {
+            "entity": [
+                "input_button.start_birdwatch"
+            ],
+            "substring": [],
+            "regex": []
+        },
+        "debugEnabled": false,
+        "constraints": [],
+        "customOutputs": [],
+        "outputInitially": false,
+        "stateType": "str",
+        "enableInput": false,
+        "entityid": "input_button.start_birdwatch",
+        "entityidfiltertype": "exact",
+        "debugenabled": false,
+        "x": 360,
+        "y": 560,
+        "wires": [
+            [
+                "fn-start-container"
+            ],
+            []
+        ]
+    },
+    {
+        "id": "bw-trigger-stop",
+        "type": "trigger-state",
+        "z": "birdwatch-tab",
+        "name": "Stop BirdWatch Button",
+        "server": "2f3e415f.67836e",
+        "version": 5,
+        "inputs": 0,
+        "outputs": 2,
+        "exposeAsEntityConfig": "",
+        "entities": {
+            "entity": [
+                "input_button.stop_birdwatch"
+            ],
+            "substring": [],
+            "regex": []
+        },
+        "debugEnabled": false,
+        "constraints": [],
+        "customOutputs": [],
+        "outputInitially": false,
+        "enableInput": false,
+        "entityid": "input_button.stop_birdwatch",
+        "entityidfiltertype": "exact",
+        "debugenabled": false,
+        "x": 360,
+        "y": 620,
+        "wires": [
+            [
+                "fn-stop-container"
+            ],
+            []
+        ]
+    },
+    {
+        "id": "comment-schedule",
+        "type": "comment",
+        "z": "birdwatch-tab",
+        "name": "── Scheduled (adjust cron times for your season) ────────",
+        "info": "",
+        "x": 450,
+        "y": 320,
+        "wires": []
+    },
+    {
+        "id": "7cafed9f3a3ba573",
+        "type": "comment",
+        "z": "birdwatch-tab",
+        "name": "\"── HA Button Helpers → Start / Stop Container ────────",
+        "info": "",
+        "x": 440,
+        "y": 500,
+        "wires": []
+    },
+    {
+        "id": "mqtt-broker-config",
+        "type": "mqtt-broker",
+        "name": "Home Assistant MQTT",
+        "broker": "192.168.1.10",
+        "port": "1883",
+        "clientid": "nodered-birdwatch",
+        "autoConnect": true,
+        "usetls": false,
+        "protocolVersion": "4",
+        "keepalive": "60",
+        "cleansession": true
+    },
+    {
+        "id": "ha-entity-update",
+        "type": "ha-entity-config",
+        "server": "2f3e415f.67836e",
+        "deviceConfig": "",
+        "name": "sensor config for last_bird_detected",
+        "version": 6,
+        "entityType": "sensor",
+        "haConfig": [
+            {
+                "property": "name",
+                "value": "Last Bird Detected"
+            },
+            {
+                "property": "icon",
+                "value": "mdi:bird"
+            },
+            {
+                "property": "entity_picture",
+                "value": ""
+            },
+            {
+                "property": "entity_category",
+                "value": ""
+            },
+            {
+                "property": "device_class",
+                "value": ""
+            },
+            {
+                "property": "unit_of_measurement",
+                "value": ""
+            },
+            {
+                "property": "state_class",
+                "value": ""
+            }
+        ],
+        "resend": true,
+        "debugEnabled": false
+    },
+    {
+        "id": "2f3e415f.67836e",
+        "type": "server",
+        "name": "Home Assistant",
+        "version": 6,
+        "addon": true,
+        "rejectUnauthorizedCerts": true,
+        "ha_boolean": [
+            "y",
+            "yes",
+            "true",
+            "on",
+            "home",
+            "open"
+        ],
+        "connectionDelay": true,
+        "cacheJson": true,
+        "heartbeat": false,
+        "heartbeatInterval": "30",
+        "areaSelector": "friendlyName",
+        "deviceSelector": "friendlyName",
+        "entitySelector": "friendlyName",
+        "statusSeparator": "at: ",
+        "statusYear": "hidden",
+        "statusMonth": "short",
+        "statusDay": "numeric",
+        "statusHourCycle": "h23",
+        "statusTimeFormat": "h:m",
+        "enableGlobalContextStore": true
+    },
+    {
+        "id": "4111f01b0bdb706f",
+        "type": "global-config",
+        "env": [],
+        "modules": {
+            "node-red-contrib-home-assistant-websocket": "0.80.3"
+        }
     }
-  },
-  {
-    "id": "ha-server",
-    "type": "server",
-    "name": "Home Assistant",
-    "addon": true,
-    "rejectUnauthorizedCerts": true,
-    "ha_boolean": "y|yes|true|on|home|open",
-    "connectionDelay": true,
-    "cacheJson": true
-  }
 ]
