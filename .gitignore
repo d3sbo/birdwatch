@@ -1,0 +1,13 @@
+# Local secrets
+.env
+secrets.env
+
+# Runtime data (SQLite DB, audio clips, images)
+data/
+
+# Python
+__pycache__/
+*.pyc
+
+# Local backup copies
+*backup*

@@ -1,0 +1,58 @@
+services:
+  birdwatch:
+    build: .
+    image: birdwatch:latest
+    container_name: birdwatch
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      # ── Cameras via go2rtc HTTP streams ──────────────────────────────────────
+      # Using go2rtc HTTP endpoint instead of RTSP — works reliably from Docker
+      # Desktop on a separate machine. go2rtc serves audio+video over HTTP MP4.
+      # CAMERA_N_URL / CAMERA_N_NAME are set in secrets.env (see secrets.env.example)
+
+      # ── Location (LATITUDE / LONGITUDE are in secrets.env) ──────────────────
+
+      # ── Detection settings ───────────────────────────────────────────────────
+      - MIN_CONFIDENCE=0.70
+      - CHUNK_SECONDS=15
+
+      # ── Audio normalisation ──────────────────────────────────────────────────
+      # Target loudness in LUFS for recorded audio clips.
+      # -14 = loud (streaming standard), -16 = moderate, -23 = broadcast quiet.
+      # Set to "off" to disable normalisation entirely.
+      - AUDIO_LOUDNESS_TARGET=-14
+
+      # ── Audio retention ──────────────────────────────────────────────────────
+      - AUDIO_RETAIN_HOURS=24
+
+      # ── Live feed ────────────────────────────────────────────────────────────
+      # Number of detections to keep visible in the live feed.
+      - FEED_CAP=50
+      - FEED_DEFAULT=8
+
+      # ── MQTT ─────────────────────────────────────────────────────────────────
+      - MQTT_PORT=1883
+      - MQTT_USER=homeassistant
+      # MQTT_HOST and MQTT_PASSWORD are in secrets.env
+      - MQTT_TOPIC_PREFIX=birdwatch
+
+      - TZ=Europe/London
+
+    # Private values (cameras, MQTT host/password, location) - see secrets.env.example
+    env_file:
+      - secrets.env
+
+    volumes:
+      - ./data:/data
+      - ./app:/app/app
+      - ./templates:/app/templates
+
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
