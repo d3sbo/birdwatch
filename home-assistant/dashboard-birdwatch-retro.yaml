@@ -1,0 +1,90 @@
+# BirdWatch cards in a green-on-black terminal style.
+# Needs the custom:button-card frontend card (HACS).
+type: grid
+column_span: 1
+cards:
+  - type: entities
+    title: BIRDWATCH
+    entities:
+      - entity: sensor.birdwatch_birdwatch_status
+        name: STATUS
+      - entity: sensor.birdwatch_last_bird_detected
+        name: LAST BIRD
+      - entity: sensor.birdwatch_last_detection_camera
+        name: CAMERA
+      - entity: sensor.birdwatch_last_detection_confidence
+        name: CONFIDENCE
+  - type: custom:button-card
+    entity: input_button.start_birdwatch
+    name: START BIRDWATCH
+    show_name: true
+    show_icon: true
+    tap_action:
+      action: toggle
+    color_type: card
+    color: rgb(15, 12, 8)
+    size: 20px
+    styles:
+      card:
+        - padding: 4px 8px
+        - height: 36px
+      icon:
+        - width: 20px
+        - height: 20px
+      name:
+        - font-size: 12px
+        - letter-spacing: 1px
+        - text-transform: uppercase
+        - color: rgb(0, 255, 0)
+        - margin-left: 4px
+    state:
+      - value: "on"
+        color: rgb(0, 80, 0)
+        styles:
+          card:
+            - border: 1px solid rgb(0, 255, 0) !important
+            - box-shadow: 0 0 6px rgba(0, 255, 0, 0.3) !important
+          name:
+            - color: rgb(51, 255, 51) !important
+      - value: "off"
+        color: rgb(15, 12, 8)
+        styles:
+          card:
+            - border: 1px solid rgba(0, 255, 0, 0.3) !important
+  - type: custom:button-card
+    entity: input_button.stop_birdwatch
+    name: STOP BIRDWATCH
+    show_name: true
+    show_icon: true
+    tap_action:
+      action: toggle
+    color_type: card
+    color: rgb(15, 12, 8)
+    size: 20px
+    styles:
+      card:
+        - padding: 4px 8px
+        - height: 36px
+      icon:
+        - width: 20px
+        - height: 20px
+      name:
+        - font-size: 12px
+        - letter-spacing: 1px
+        - text-transform: uppercase
+        - color: rgb(0, 255, 0)
+        - margin-left: 4px
+    state:
+      - value: "on"
+        color: rgb(0, 80, 0)
+        styles:
+          card:
+            - border: 1px solid rgb(0, 255, 0) !important
+            - box-shadow: 0 0 6px rgba(0, 255, 0, 0.3) !important
+          name:
+            - color: rgb(51, 255, 51) !important
+      - value: "off"
+        color: rgb(15, 12, 8)
+        styles:
+          card:
+            - border: 1px solid rgba(0, 255, 0, 0.3) !important

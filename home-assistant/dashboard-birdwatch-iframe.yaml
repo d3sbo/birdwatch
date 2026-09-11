@@ -1,0 +1,7 @@
+# A whole dashboard that just shows the BirdWatch web UI.
+# Create a new dashboard, open its raw configuration editor and paste this.
+# Use the address where BirdWatch is reachable from your browser
+# (e.g. a reverse-proxy path, or http://<docker-host>:8080/).
+strategy:
+  type: iframe
+  url: http://192.168.1.20:8080/

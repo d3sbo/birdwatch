@@ -1,0 +1,10 @@
+# Dashboard buttons that the Node-RED flow listens for to start/stop the container.
+# Add to configuration.yaml, or create them in the UI:
+# Settings > Devices & services > Helpers > Create helper > Button
+input_button:
+  start_birdwatch:
+    name: Start BirdWatch
+    icon: mdi:bird
+  stop_birdwatch:
+    name: Stop BirdWatch
+    icon: mdi:bird

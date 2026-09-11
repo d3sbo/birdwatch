@@ -1,0 +1,40 @@
+# BirdWatch dashboard cards.
+# The sensor.birdwatch_* entities are created automatically by the app's
+# MQTT discovery (Settings > Devices & services > MQTT > BirdWatch).
+# Paste a card into a dashboard's raw configuration editor.
+
+# ── Option 1: standard cards (no custom cards needed) ──────────────────────
+type: grid
+cards:
+  - type: heading
+    heading: BirdWatch
+  - type: tile
+    entity: sensor.birdwatch_last_bird_detected
+    grid_options: {columns: 12, rows: 1}
+  - type: tile
+    entity: sensor.birdwatch_last_detection_camera
+    grid_options: {columns: 12, rows: 1}
+  - type: tile
+    entity: sensor.birdwatch_last_detection_confidence
+    grid_options: {columns: 12, rows: 1}
+  - type: tile
+    entity: sensor.birdwatch_birdwatch_status
+    grid_options: {columns: 12, rows: 1}
+  - type: button
+    entity: input_button.start_birdwatch
+    show_name: true
+    show_icon: true
+    tap_action:
+      action: perform-action
+      perform_action: input_button.press
+      target:
+        entity_id: input_button.start_birdwatch
+  - type: button
+    entity: input_button.stop_birdwatch
+    show_name: true
+    show_icon: true
+    tap_action:
+      action: perform-action
+      perform_action: input_button.press
+      target:
+        entity_id: input_button.stop_birdwatch
