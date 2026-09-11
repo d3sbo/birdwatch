@@ -1,0 +1,1386 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BirdWatch</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.min.js">
+
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+<style>
+  :root {
+    --bg:      #0f1117;
+    --surface: #1a1d27;
+    --border:  #2a2d3a;
+    --accent:  #4ade80;
+    --accent2: #60a5fa;
+    --warn:    #fbbf24;
+    --text:    #e2e8f0;
+    --muted:   #64748b;
+    --danger:  #f87171;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', system-ui, sans-serif; min-height: 100vh; }
+
+  header {
+    display: flex; align-items: center; gap: 12px;
+    padding: 14px 20px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    position: sticky; top: 0; z-index: 100;
+  }
+  header h1 { font-size: 1.15rem; font-weight: 600; letter-spacing: -0.02em; }
+  header h1 span { color: var(--accent); }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); animation: pulse 2s infinite; margin-left: auto; }
+  .dot.paused { background: var(--warn); animation: none; }
+  #status-text { font-size: 0.8rem; color: var(--muted); }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
+  .page  { display: flex; flex-direction: column; gap: 14px; padding: 14px; max-width: 1600px; margin: 0 auto; }
+  .stats { display: grid; grid-template-columns: 1fr auto; border-radius: 10px; overflow: hidden; background: var(--surface); border: 1px solid var(--border); min-height: 120px; }
+  .stats-numbers { display: flex; align-items: center; justify-content: space-around; padding: 0 28px; gap: 8px; }
+  .stats-divider { width: 1px; background: var(--border); align-self: stretch; margin: 16px 0; }
+  .stat-card { text-align: center; }
+  .stat-card .value { font-size: 2.2rem; font-weight: 700; color: var(--accent); line-height: 1; }
+  .stat-card .label { font-size: 0.7rem; color: var(--muted); margin-top: 5px; }
+  .stats-bird { display: grid; grid-template-columns: 120px 1fr; width: 340px; border-left: 1px solid var(--border); }
+  .stats-bird-img { width: 120px; object-fit: cover; display: block; align-self: stretch; }
+  .stats-bird-body { display: flex; flex-direction: column; justify-content: space-between; }
+  .stats-bird-info { padding: 8px 10px 4px; }
+  .stats-bird-footer { border-top: 1px solid var(--border); padding: 4px 10px; display: flex; align-items: center; justify-content: space-between; }
+
+  .main  { display: grid; grid-template-columns: 1fr 320px; gap: 14px; align-items: stretch; height: 680px; }
+  .main > .card { height: 100%; box-sizing: border-box; overflow: hidden; }
+  .card  { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 14px; }
+  .card-title { font-size: 0.72rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin-bottom: 10px; }
+  .chart-wrap { height: 160px; position: relative; }
+
+  /* Feed — fills card height */
+  #feed { overflow-y: scroll; display: flex; flex-direction: column; gap: 5px; flex: 1; min-height: 0; }
+  .detection-item {
+    display: flex; align-items: center; gap: 10px;
+    background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
+    padding: 9px 11px; animation: slideIn 0.25s ease; flex-shrink: 0;
+    min-height: 66px; box-sizing: border-box;
+  }
+  @keyframes slideIn { from{opacity:0;transform:translateY(-6px)} to{opacity:1;transform:none} }
+  .detection-item .bird-icon { font-size: 1.4rem; flex-shrink: 0; }
+  .detection-item .info { flex: 1; min-width: 0; }
+  .detection-item .name { font-weight: 600; font-size: 0.88rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .detection-item .meta { font-size: 0.7rem; color: var(--muted); margin-top: 2px; }
+  .confidence-pill { font-size: 0.7rem; font-weight: 700; padding: 2px 7px; border-radius: 20px; flex-shrink: 0; }
+  .conf-high   { background: #14532d; color: var(--accent); }
+  .conf-medium { background: #713f12; color: var(--warn); }
+  .conf-low    { background: #450a0a; color: var(--danger); }
+  .cam-badge   { font-size: 0.62rem; padding: 2px 7px; border-radius: 4px; font-weight: 500; white-space: nowrap; }
+  .cam-chip    { font-size: 0.68rem; padding: 3px 10px; border-radius: 999px; border: 1.5px solid transparent; cursor: pointer; font-weight: 500; white-space: nowrap; opacity: 0.55; }
+  .cam-chip.active { opacity: 1; }
+  .cam-chip-all       { background:#4ade80; color:#052e16; border-color:#4ade80; opacity:1; }
+  .cam-chip-all.active{ background:#4ade80; color:#052e16; }
+
+  .controls { display: flex; gap: 8px; }
+  .btn { padding: 5px 12px; border-radius: 7px; border: 1px solid var(--border); font-size: 0.78rem; font-weight: 600; cursor: pointer; transition: filter 0.15s; }
+  .btn-pause  { background: #451a03; color: var(--warn);   border-color: #92400e; }
+  .btn-resume { background: #052e16; color: var(--accent); border-color: #166534; }
+  .btn:hover  { filter: brightness(1.2); }
+
+  /* Species — fills card height */
+  #species-list { flex: 1; overflow-y: scroll; min-height: 0; padding-right: 11px; }
+  .species-row { display: flex; align-items: center; gap: 7px; padding: 7px 0; border-bottom: 1px solid var(--border); font-size: 0.82rem; }
+  .species-row:last-child { border-bottom: none; }
+  .species-row .sp-name  { flex: 1; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+  .species-row .sp-count { background: #1e3a5f; color: var(--accent2); padding: 1px 6px; border-radius: 10px; font-size: 0.72rem; font-weight: 700; flex-shrink: 0; }
+  .species-row .sp-conf  { font-size: 0.68rem; font-weight: 700; padding: 2px 6px; border-radius: 10px; flex-shrink: 0; }
+
+  .empty { text-align: center; color: var(--muted); padding: 28px; font-size: 0.82rem; }
+
+  @media(max-width:900px) {
+    .main  { grid-template-columns: 1fr; }
+    .stats { grid-template-columns: repeat(2,1fr); }
+  }
+
+  #feed::-webkit-scrollbar, #species-list::-webkit-scrollbar { width: 4px; }
+  #feed::-webkit-scrollbar-track, #species-list::-webkit-scrollbar-track { background: transparent; }
+  #feed::-webkit-scrollbar-thumb, #species-list::-webkit-scrollbar-thumb { background: #4ade8033; border-radius: 4px; }
+  #feed::-webkit-scrollbar-thumb:hover, #species-list::-webkit-scrollbar-thumb:hover { background: #4ade8066; }
+  #feed, #species-list { scrollbar-width: thin; scrollbar-color: #4ade8033 transparent; }
+
+  #sp-count-slider {
+    -webkit-appearance: none; appearance: none;
+    height: 4px; border-radius: 2px; outline: none; cursor: pointer;
+    background: linear-gradient(to right, #4ade8033 0%, #4ade8033 var(--val, 50%), #1a2030 var(--val, 50%), #1a2030 100%);
+  }
+  #sp-count-slider::-webkit-slider-thumb {
+    -webkit-appearance: none; appearance: none;
+    width: 8px; height: 8px; border-radius: 50%;
+    background: #4ade8066; border: none; cursor: pointer;
+  }
+  #sp-count-slider::-webkit-slider-thumb:hover {
+    background: #4ade80aa;
+  }
+  #sp-count-slider::-moz-range-thumb {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: #4ade8066; border: none; cursor: pointer;
+  }
+  #sp-count-slider::-moz-range-track {
+    height: 4px; border-radius: 2px; background: #1a2030;
+  }
+
+  #loudness-slider {
+    -webkit-appearance: none; appearance: none;
+    height: 4px; border-radius: 2px; outline: none; cursor: pointer;
+    background: linear-gradient(to right, #4ade8033 0%, #4ade8033 var(--val,64%), #1a2030 var(--val,64%), #1a2030 100%);
+  }
+  #loudness-slider::-webkit-slider-thumb {
+    -webkit-appearance: none; appearance: none;
+    width: 9px; height: 9px; border-radius: 50%;
+    background: #4ade8066; border: none; cursor: pointer;
+  }
+  #loudness-slider::-moz-range-thumb {
+    width: 9px; height: 9px; border-radius: 50%;
+    background: #4ade8066; border: none; cursor: pointer;
+  }
+  #loudness-slider::-moz-range-track { height:4px;border-radius:2px;background:#1a2030; }
+
+  .multicam-badge { font-size: 0.58rem; padding: 1px 5px; border-radius: 4px; background: #2d1b69; color: #c4b5fd; border: 1px solid #7c3aed33; white-space: nowrap; flex-shrink: 0; }
+  .group-item { border-bottom: 1px solid #1e2130; background: #0f1117; display: flex; flex-direction: column; width: 100%; }
+  .group-hdr { display: flex; align-items: flex-start; gap: 10px; padding: 8px 14px 8px 12px; width: 100%; }
+  .group-thumb { width: 44px; height: 44px; border-radius: 6px; flex-shrink: 0; object-fit: cover; background: #1e293b; }
+  .group-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; width: 100%; }
+  .group-name-row { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; margin-bottom: 2px; }
+  .group-cameras { display: flex; flex-direction: column; gap: 2px; width: 100%; }
+  .cam-subrow { display: flex; align-items: center; gap: 7px; padding: 3px 0; border-top: 1px solid #1a2030; font-size: 11px; width: 100%; }
+  .cam-subrow:first-child { border-top: none; padding-top: 0; }
+  .cam-time-sm { color: #475569; min-width: 52px; font-size: 10px; flex-shrink: 0; }
+  .cam-spacer { flex: 1; min-width: 0; }
+  .cam-time-sm { color: #475569; min-width: 52px; font-size: 10px; }
+
+  .sp-expand { background: #111827; border-top: 1px solid #1e2130; border-bottom: 1px solid #2a2d3a; padding: 6px 12px; display: none; }
+  .sp-expand.open { display: block; }
+  .sp-expand-row { display: flex; align-items: center; gap: 6px; padding: 2px 8px; font-size: 10px; }
+  .sp-expand-time { color: #475569; min-width: 52px; flex-shrink: 0; }
+  .sp-expand-spacer { flex: 1; }
+  .sp-chevron { font-size: 9px; color: #475569; flex-shrink: 0; transition: transform 0.15s; }
+  .species-row.expanded .sp-chevron { transform: rotate(90deg); }
+
+  #feed-cap-slider::-webkit-slider-thumb { -webkit-appearance:none;width:9px;height:9px;border-radius:50%;background:#4ade8066;border:none;cursor:pointer; }
+  #feed-cap-slider::-moz-range-thumb { width:9px;height:9px;border-radius:50%;background:#4ade8066;border:none;cursor:pointer; }
+  #feed-cap-slider::-moz-range-track { height:4px;border-radius:2px;background:#1a2030; }
+
+</style>
+</head>
+<body>
+
+<header>
+  <span style="font-size:1.4rem">🐦</span>
+  <h1>Bird<span>Watch</span></h1>
+  <span id="status-text">connecting…</span>
+  <span id="header-time" style="font-size:0.85rem;color:var(--text);font-variant-numeric:tabular-nums;margin-left:16px"></span>
+  <div class="dot" id="status-dot"></div>
+</header>
+
+<div class="page">
+
+  <div class="stats">
+    <div class="stats-numbers">
+      <div class="stat-card">
+        <div class="value" id="stat-today">0</div>
+        <div class="label">Detections today</div>
+        <div style="font-size:0.65rem;color:#64748b;margin-top:3px"><span id="stat-sightings">0</span> sightings</div>
+      </div>
+      <div class="stats-divider"></div>
+      <div class="stat-card"><div class="value" id="stat-species">0</div><div class="label">Species today</div></div>
+      <div class="stats-divider"></div>
+      <div class="stat-card"><div class="value" id="stat-alltime">0</div><div class="label">Species all time</div></div>
+    </div>
+    <a id="stat-last-card" href="#" onclick="return false" class="stats-bird" style="text-decoration:none;cursor:default">
+      <div id="stat-last-img-wrap" style="background:var(--border);display:flex;align-items:center;justify-content:center;align-self:stretch">
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--muted)" stroke-width="1.2"><path d="M12 3c-1 2-3 3-5 3 1 2 1 4 0 6 2-1 4-1 6 0-.5-2 0-4 1-5-1 0-2-2-2-4z"/><path d="M7 12c-2 1-4 3-4 5h18c0-2-2-4-4-5"/></svg>
+      </div>
+      <div class="stats-bird-body">
+        <div class="stats-bird-info">
+          <div id="stat-last-name" style="font-size:0.82rem;font-weight:700;color:var(--accent);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">—</div>
+          <div id="stat-last-species" style="font-size:0.62rem;color:var(--muted);font-style:italic;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px"></div>
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-top:8px">
+            <span id="stat-last-cam" style="font-size:0.58rem;padding:2px 6px;border-radius:4px;background:#1e293b;color:var(--accent2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:62%"></span>
+            <span id="stat-last-conf" style="font-size:0.7rem;font-weight:700;color:var(--accent)"></span>
+          </div>
+        </div>
+        <div class="stats-bird-footer">
+          <span id="stat-last-time" style="font-size:0.58rem;color:var(--muted)">Last detection</span>
+          <div style="display:flex;align-items:center;gap:8px">
+            <button id="stat-last-play" onclick="event.preventDefault();event.stopPropagation()" style="display:none;font-size:0.58rem;padding:2px 7px;border-radius:4px;border:1px solid #4ade80;color:#4ade80;background:transparent;cursor:pointer">&#9654; Play</button>
+          </div>
+        </div>
+        <div onclick="event.stopPropagation()" onmousedown="event.stopPropagation()" onmouseup="event.stopPropagation()" onclick="event.preventDefault();event.stopPropagation()" style="display:flex;align-items:center;gap:5px;padding:4px 10px;border-top:1px solid var(--border)">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#64748b" stroke-width="2" style="flex-shrink:0"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
+          <input type="range" id="loudness-slider" min="0" max="1" value="1" step="0.05"
+            style="flex:1;cursor:pointer;--val:100%"
+            oninput="updateLoudness(this)">
+          <span id="loudness-val" style="font-size:0.6rem;color:#4ade80;min-width:24px;text-align:right">1.0</span>
+        </div>
+      </div>
+    </a>
+  </div>
+
+  <div class="card">
+    <div class="card-title" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+      <span id="activity-title">Today's Activity (detections per hour)</span>
+      <div style="display:flex;align-items:center;gap:6px">
+        <button id="act-bar-btn" onclick="showActivityView('bar')" style="font-size:10px;padding:2px 9px;border-radius:5px;border:1px solid #4ade80;color:#4ade80;background:#4ade8022;cursor:pointer">&#9646;&#9646; Hourly</button>
+        <button id="act-3d-btn" onclick="showActivityView('3d')" style="font-size:10px;padding:2px 9px;border-radius:5px;border:1px solid #2a2d3a;color:#64748b;background:transparent;cursor:pointer">~ Species</button>
+        <button onclick="chart.resetZoom()" id="reset-zoom-btn" style="font-size:0.65rem;padding:2px 8px;border-radius:4px;border:1px solid var(--border);color:var(--muted);background:transparent;cursor:pointer">Reset zoom</button>
+      </div>
+    </div>
+    <div id="act-bar-view" class="chart-wrap"><canvas id="activityChart"></canvas></div>
+    <div id="act-3d-view" style="display:none;flex-direction:column">
+      <div style="display:flex;align-items:center;gap:8px;padding:4px 0 6px;border-bottom:1px solid #1a2030;margin-bottom:4px">
+        <span style="font-size:10px;color:#64748b;white-space:nowrap">Top</span>
+        <input type="range" id="sp-count-slider" min="2" max="20" value="12" step="1"
+          style="flex:1;cursor:pointer;--val:55.6%"
+          oninput="const pct=((this.value-this.min)/(this.max-this.min)*100).toFixed(1)+'%';this.style.setProperty('--val',pct);document.getElementById('sp-count-val').textContent=this.value;document.getElementById('activity-title').textContent='Top '+this.value+' species by hour';reloadSpeciesChart()">
+        <span id="sp-count-val" style="font-size:10px;color:#4ade80;min-width:14px;text-align:right">12</span>
+        <span style="font-size:10px;color:#64748b;white-space:nowrap">species</span>
+      </div>
+      <div style="position:relative;height:150px">
+        <canvas id="speciesHourChart" role="img" aria-label="Line chart of top species by hour">Top species detections by hour of day.</canvas>
+      </div>
+    </div>
+  </div>
+
+  <div class="main">
+
+    <div class="card" style="display:flex;flex-direction:column;height:100%;overflow:hidden;">
+      <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <span>Live Feed</span>
+        <div class="controls" style="align-items:center;gap:10px">
+          <div style="display:flex;align-items:center;gap:6px">
+            <span style="font-size:10px;color:#64748b;white-space:nowrap">Feed</span>
+            <input type="range" id="feed-cap-slider" min="1" max="50" value="50" step="1"
+              style="-webkit-appearance:none;appearance:none;width:80px;height:4px;border-radius:2px;outline:none;cursor:pointer;background:#4ade8033"
+              oninput="updateFeedCap(this.value)">
+            <span id="feed-cap-val" style="font-size:10px;color:#4ade80;min-width:28px">50</span>
+          </div>
+          <button class="btn btn-pause"  onclick="sendControl('pause')">⏸ Pause</button>
+          <button class="btn btn-resume" onclick="sendControl('resume')">▶ Resume</button>
+        </div>
+      </div>
+      <div id="cam-filters" style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:8px"></div>
+      <div id="feed"><div class="empty">Listening for birds…</div></div>
+    </div>
+
+    <div class="card" style="display:flex;flex-direction:column;">
+      <div class="card-title">Species Today</div>
+      <div id="species-list"><div class="empty">No detections yet today</div></div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+// ── Subpath proxy support ─────────────────────────────────────────────────────
+(function() {
+  const base = window.location.pathname.startsWith('/bird-watch') ? '/bird-watch' : '';
+  const orig = window.fetch.bind(window);
+  window.fetch = (url, opts) => orig(
+    typeof url === 'string' && url.startsWith('/') ? base + url : url, opts
+  );
+  window._bwBase = base;
+})();
+
+// ── Config ───────────────────────────────────────────────────────────────────
+window.FEED_CAP = 8;
+async function loadConfig() {
+  try {
+    const cfg = await (await fetch('/api/config')).json();
+    window.FEED_CAP = cfg.feed_cap || 50;
+    const feedDefault = cfg.feed_default || 8;
+    const s = document.getElementById('feed-cap-slider');
+    if (s) { s.max = window.FEED_CAP; s.value = feedDefault; document.getElementById('feed-cap-val').textContent = feedDefault; }
+    updateFeedCap(feedDefault);
+  } catch(e) {}
+}
+
+// ── Clock ────────────────────────────────────────────────────────────────────
+function updateClock() {
+  document.getElementById('header-time').textContent =
+    new Date().toLocaleTimeString('en-GB', {hour:'2-digit', minute:'2-digit', second:'2-digit'});
+}
+updateClock();
+setInterval(updateClock, 1000);
+
+// ── Retry feed item images that haven't loaded yet ───────────────────────────
+function refreshFeedImages() {
+  document.querySelectorAll('#feed .detection-item').forEach(row => {
+    const icon = row.querySelector('.bird-icon');
+    if (!icon || icon.style.display === 'none') return;
+    const name = row.dataset.name;
+    if (!name) return;
+    delete imgCache[name];
+    fetchBirdImg(name).then(src => {
+      if (!src || !row.isConnected) return;
+      const img = row.querySelector('img');
+      if (img) { img.onload = () => { img.style.opacity='1'; icon.style.display='none'; }; img.src = src; }
+    });
+  });
+}
+setInterval(refreshFeedImages, 4000);
+
+const socket = io({
+    path: (window._bwBase || '') + '/socket.io',
+    transports: ['websocket'],
+    upgrade: false
+});
+socket.on('connect', () => {
+  document.getElementById('status-text').textContent = 'connected';
+  document.getElementById('status-dot').classList.remove('paused');
+});
+socket.on('disconnect', () => {
+  document.getElementById('status-text').textContent = 'disconnected';
+  document.getElementById('status-dot').classList.add('paused');
+});
+socket.on('detection', (data) => {
+  addFeedItem(data);
+  refreshSpecies();
+  refreshStats();
+  updateLastCard(data);
+  // Silently refresh species detection cache in background — no flash
+  fetch('/api/species/' + encodeURIComponent(data.common_name) + '/detections')
+    .then(r => r.json())
+    .then(dets => {
+      _speciesDetCache[data.common_name] = dets;
+      // If this species is currently expanded, update it silently
+      const open = document.querySelector('.sp-expand.open[data-species="' + CSS.escape(data.common_name) + '"]');
+      if (open) _buildSpeciesExpand(open, dets);
+    });
+});
+
+const ctx = document.getElementById('activityChart').getContext('2d');
+const chart = new Chart(ctx, {
+  type: 'bar',
+  data: {
+    labels: Array.from({length:24}, (_,i) => i.toString().padStart(2,'0')+':00'),
+    datasets: [{ data: new Array(24).fill(0), backgroundColor: 'rgba(74,222,128,0.35)', borderColor: '#4ade80', borderWidth: 1, borderRadius: 3 }]
+  },
+  options: {
+    responsive: true, maintainAspectRatio: false,
+    plugins: { legend: { display: false } },
+    scales: {
+      x: { ticks: { color: '#64748b', font: { size: 9 }, maxRotation: 0 }, grid: { color: '#2a2d3a' } },
+      y: { ticks: { color: '#64748b', font: { size: 10 } }, grid: { color: '#2a2d3a' }, beginAtZero: true }
+    }
+  }
+});
+
+function confClass(c) { return c >= 0.85 ? 'conf-high' : c >= 0.70 ? 'conf-medium' : 'conf-low'; }
+function timeStr(ts) { return ts ? new Date(ts).toLocaleTimeString('en-GB', {hour:'2-digit',minute:'2-digit',second:'2-digit'}) : ''; }
+const ICONS = ['🦆','🦅','🦉','🦜','🐦','🐧','🦢','🦩','🦚','🦃'];
+function birdIcon(n) { return ICONS[n.split('').reduce((a,c) => a+c.charCodeAt(0),0) % ICONS.length]; }
+
+// ── Bird image — served locally from /data/images/ via Flask ─────────────────
+const imgCache = {};   // commonName -> url string | false
+const IMG_VER = new Date().toISOString().slice(0, 10).replace(/-/g, ''); // daily cache-bust e.g. 20260507
+const taxaUrls = {};  // commonName -> iNaturalist URL
+let taxaUrlsLoaded = false;
+
+function loadTaxaUrls(cb) {
+  fetch('/api/taxa-urls').then(r => r.json()).then(data => {
+    Object.assign(taxaUrls, data);
+    taxaUrlsLoaded = true;
+    if (cb) cb();
+  }).catch(() => { if (cb) cb(); });
+}
+loadTaxaUrls();  // initial load
+setInterval(loadTaxaUrls, 30000);  // refresh every 30s
+
+async function fetchBirdImg(commonName) {
+  if (commonName in imgCache) return imgCache[commonName];
+  imgCache[commonName] = false;
+  try {
+    const url = `/api/bird-image/${encodeURIComponent(commonName)}?v=${IMG_VER}`;
+    const res  = await fetch(url);
+    if (res.ok) {
+      const fullUrl = (window._bwBase || '') + url;
+      imgCache[commonName] = fullUrl;
+      return fullUrl;
+    }
+  } catch(e) {}
+  return false;
+}
+
+
+// ── Multi-camera detection grouping ──────────────────────────────────────────
+const MULTICAM_WINDOW_SEC = 30;
+
+function _findGroupItem(commonName) {
+  // Find existing group element for this species within the time window
+  return document.querySelector('#feed .group-item[data-name="' + CSS.escape(commonName) + '"]') || null;
+}
+
+function _makeReplayBtn(audioFile) {
+  const btn = document.createElement('button');
+  btn.style.cssText = 'font-size:10px;padding:1px 6px;border-radius:3px;border:1px solid #2a2d3a;color:#64748b;background:transparent;cursor:pointer';
+  btn.textContent = '▶ Play';
+  if (audioFile) btn.dataset.audioFile = audioFile;
+  // Restore Stop state if this file is currently playing
+  if (audioFile && _curBtn && _curBtn.dataset.audioFile === audioFile) {
+    btn.textContent = '⏹ Stop';
+    btn.dataset.origLabel = '▶ Play';
+    _curBtn = btn;
+  }
+  btn.addEventListener('mouseenter', () => btn.style.borderColor = 'var(--accent)');
+  btn.addEventListener('mouseleave', () => btn.style.borderColor = '#2a2d3a');
+  if (audioFile) {
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      if (_curBtn === btn) { stopAll(); return; }
+      btn.dataset.origLabel = '▶ Play';
+      playBoosted('/api/audio/' + encodeURIComponent(audioFile), () => { btn.textContent = '▶ Play'; }, btn);
+      btn.textContent = '⏹ Stop';
+    });
+  } else {
+    btn.style.display = 'none';
+  }
+  return btn;
+}
+
+function _addCamSubrow(camerasEl, data) {
+  const row = document.createElement('div');
+  row.className = 'cam-subrow';
+  row.dataset.camera = data.camera || '';
+  const t = document.createElement('span'); t.className = 'cam-time-sm'; t.textContent = timeStr(data.timestamp);
+  const badge = document.createElement('span'); badge.className = 'cam-badge'; badge.textContent = data.camera; styleBadge(badge, data.camera);
+  const conf = document.createElement('span'); conf.className = 'confidence-pill ' + confClass(data.confidence); conf.textContent = Math.round(data.confidence*100)+'%';
+  const play = _makeReplayBtn(data.audio_file);
+  row.append(t, badge, conf, play);
+  const spacer = document.createElement('span'); spacer.className = 'cam-spacer'; row.insertBefore(spacer, badge);
+  camerasEl.insertBefore(row, camerasEl.firstChild);
+}
+
+function _updateGroupHeader(groupEl, data) {
+  const subrows = groupEl.querySelectorAll('.cam-subrow');
+  const count = subrows.length;
+  groupEl.querySelector('.group-count').textContent = '· ' + count + ' cameras';
+  const times = Array.from(subrows).map(r => r.querySelector('.cam-time-sm').textContent);
+  groupEl.querySelector('.group-timerange').textContent = times[times.length-1] + ' – ' + times[0];
+  const badge = groupEl.querySelector('.group-count');
+  if (badge) { badge.style.display = count >= 2 ? 'inline-block' : 'none'; badge.textContent = count + ' cameras'; }
+  // Update dataset.camera to show all cameras for filter
+  groupEl.dataset.camera = Array.from(subrows).map(r => r.dataset.camera).join(',');
+}
+
+function addFeedItem(data) {
+  const feed = document.getElementById('feed');
+  const empty = feed.querySelector('.empty');
+  if (empty) empty.remove();
+  ensureCamChip(data.camera);
+
+  // Check if a group exists for this species within the window
+  const existing = _findGroupItem(data.common_name);
+  const lastTs = existing ? parseInt(existing.dataset.lastTs || '0') : 0;
+  const nowTs = new Date(data.timestamp).getTime() || Date.now();
+  const withinWindow = existing && (nowTs - lastTs) < MULTICAM_WINDOW_SEC * 1000;
+  const sameCameraGroup = existing && existing.querySelector('.cam-subrow[data-camera="' + CSS.escape(data.camera||'') + '"]');
+
+  if (withinWindow && !sameCameraGroup) {
+    // Add camera to existing group
+    existing.dataset.lastTs = nowTs;
+    _addCamSubrow(existing.querySelector('.group-cameras'), data);
+    _updateGroupHeader(existing, data);
+    feed.insertBefore(existing, feed.firstChild);
+    applyFilter();
+    return;
+  }
+
+  if (existing && !withinWindow) {
+    // Old group — demote to single row by removing group class so it stays
+  }
+
+  // Build a new item — either single or start of a new group
+  const item = document.createElement('div');
+  item.className = 'detection-item group-item';
+  item.dataset.name = data.common_name;
+  item.dataset.camera = data.camera || '';
+  item.dataset.audio = data.audio_file || '';
+  item.dataset.lastTs = nowTs;
+  item.style.cssText = 'border-bottom:1px solid #1e2130;background:#0f1117';
+
+  // Header row
+  const hdr = document.createElement('div');
+  hdr.className = 'group-hdr';
+
+  const img = document.createElement('img');
+  img.className = 'group-thumb';
+  img.style.cssText = 'opacity:0;transition:opacity 0.2s;cursor:pointer';
+  img.title = 'View on iNaturalist';
+  const span = document.createElement('span');
+  span.className = 'bird-icon';
+  span.style.cssText = 'cursor:pointer;flex-shrink:0;font-size:1.6rem';
+  span.textContent = birdIcon(data.common_name);
+  function openInat(e) {
+    e.stopPropagation();
+    const url = taxaUrls[data.common_name] || 'https://www.inaturalist.org/taxa/search?q=' + encodeURIComponent(data.species);
+    window.open(url, '_blank');
+  }
+  img.addEventListener('click', openInat);
+  span.addEventListener('click', openInat);
+
+  const bodyDiv = document.createElement('div');
+  bodyDiv.className = 'group-body';
+  bodyDiv.style.cssText = 'flex:1;min-width:0;display:flex;flex-direction:column;gap:4px;width:100%';
+
+  const nameRow = document.createElement('div');
+  nameRow.className = 'group-name-row';
+  nameRow.innerHTML =
+    '<span class="name" style="font-size:13px;font-weight:600;color:#f1f5f9">' + data.common_name + '</span>' +
+    '<span class="group-count" style="font-size:10px;padding:1px 6px;border-radius:4px;background:#2d1b69;color:#c4b5fd;border:1px solid #7c3aed33;display:none"></span>' +
+    '<em style="color:#94a3b8;font-size:0.68rem">' + data.species + '</em>' +
+    '<span class="group-timerange" style="font-size:0.68rem;color:#64748b"></span>';
+
+  bodyDiv.appendChild(nameRow);
+  hdr.append(img, span, bodyDiv);
+  item.appendChild(hdr);
+
+  // Camera subrows container
+  const camerasEl = document.createElement('div');
+  camerasEl.className = 'group-cameras';
+  _addCamSubrow(camerasEl, data);
+  bodyDiv.appendChild(camerasEl);
+
+  feed.insertBefore(item, feed.firstChild);
+  while (feed.children.length > window.FEED_CAP) feed.removeChild(feed.lastChild);
+  applyFilter();
+  fetch('/api/sightings').then(r=>r.json()).then(d=>{ const sEl=document.getElementById('stat-sightings'); if(sEl) sEl.textContent=d.sightings; });
+
+  fetchBirdImg(data.common_name).then(src => {
+    if (src && item.isConnected) {
+      img.onload = () => { img.style.opacity = '1'; span.style.display = 'none'; };
+      img.src = src;
+    }
+  });
+}
+
+
+async function refreshActivity() {
+  const data = await (await fetch('/api/activity')).json();
+  chart.data.datasets[0].data = Array.from({length:24}, (_,i) => data[String(i).padStart(2,'0')] || 0);
+  chart.update('none');
+}
+
+async function refreshSpecies() {
+  const species = await (await fetch('/api/species')).json();
+  const el = document.getElementById('species-list');
+  if (!el) return;
+  if (!species.length) { el.innerHTML = '<div class="empty">No detections yet today</div>'; return; }
+  // Remember scroll position and open species before rebuilding
+  const scrollTop = el.scrollTop;
+  const openExpand = el.querySelector('.sp-expand.open');
+  const openSpecies = openExpand ? openExpand.dataset.species : null;
+  el.innerHTML = '';
+  species.forEach(s => {
+    const row = document.createElement('div');
+    row.className = 'species-row';
+
+    const img = document.createElement('img');
+    img.style.cssText = 'width:32px;height:32px;object-fit:cover;border-radius:4px;flex-shrink:0;display:none';
+
+    const icon = document.createElement('span');
+    icon.className = 'bird-icon';
+    icon.style.cssText = 'font-size:1.1rem;width:32px;text-align:center;flex-shrink:0';
+    icon.textContent = birdIcon(s.common_name);
+
+    const name = document.createElement('span');
+    name.className = 'sp-name';
+    name.textContent = s.common_name;
+
+    const chevron = document.createElement('span');
+    chevron.className = 'sp-chevron';
+    chevron.textContent = '▶';
+
+    const count = document.createElement('span');
+    count.className = 'sp-count';
+    count.textContent = s.count + '×';
+
+    const conf = document.createElement('span');
+    const confVal = s.max_confidence || 0;
+    conf.className = 'sp-conf ' + confClass(confVal);
+    conf.textContent = Math.round(confVal * 100) + '%';
+
+    row.append(img, icon, name, chevron, count, conf);
+
+    // Expand/collapse on click
+    const expand = document.createElement('div');
+    expand.className = 'sp-expand';
+    expand.innerHTML = '<div style="font-size:10px;color:#475569;padding:2px 8px">Loading…</div>';
+
+    let loaded = false;
+    row.style.cursor = 'pointer';
+    row.addEventListener('click', () => {
+      const isOpen = expand.classList.contains('open');
+      // Close all others
+      document.querySelectorAll('.sp-expand.open').forEach(e => e.classList.remove('open'));
+      document.querySelectorAll('.species-row.expanded').forEach(r => r.classList.remove('expanded'));
+      if (!isOpen) {
+        expand.classList.add('open');
+        row.classList.add('expanded');
+        if (!loaded) {
+          loaded = true;
+          fetch('/api/species/' + encodeURIComponent(s.common_name) + '/detections')
+            .then(r => r.json())
+            .then(dets => {
+              expand.innerHTML = '';
+              if (!dets.length) { expand.innerHTML = '<div style="font-size:10px;color:#475569;padding:2px 8px">No detections found</div>'; return; }
+              // Show last detection per camera: badge | time | spacer | conf | play
+              const byCam = {};
+              dets.forEach(d => {
+                if (!byCam[d.camera]) {
+                  byCam[d.camera] = d;
+                } else if (!byCam[d.camera].audio_file && d.audio_file) {
+                  // Prefer a detection that has audio over one that doesn't
+                  byCam[d.camera] = d;
+                }
+              });
+              Object.entries(byCam).forEach(([cam, d]) => {
+                const cr = document.createElement('div');
+                cr.className = 'sp-expand-row';
+                cr.style.cssText = 'display:flex;align-items:center;gap:7px;padding:4px 0;border-top:1px solid #1a2030';
+                cr.style.setProperty('border-top', cr === expand.firstChild ? 'none' : '1px solid #1a2030');
+
+                const camBadge = document.createElement('span');
+                camBadge.className = 'cam-badge';
+                camBadge.textContent = cam;
+                styleBadge(camBadge, cam);
+
+                const timeSpan = document.createElement('span');
+                timeSpan.style.cssText = 'color:#475569;font-size:10px;flex-shrink:0';
+                timeSpan.textContent = timeStr(d.timestamp);
+
+                const spacer = document.createElement('span');
+                spacer.style.flex = '1';
+
+                const conf = document.createElement('span');
+                conf.className = 'confidence-pill ' + confClass(d.confidence);
+                conf.style.fontSize = '10px';
+                conf.textContent = Math.round((d.confidence||0)*100) + '%';
+
+                const playBtn = _makeReplayBtn(d.audio_file);
+
+                cr.append(camBadge, timeSpan, spacer, conf, playBtn);
+                expand.appendChild(cr);
+              });
+              // Fix first row border
+              if (expand.firstChild) expand.firstChild.style.borderTop = 'none';
+            });
+        }
+      }
+    });
+
+    expand.dataset.species = s.common_name;
+    el.appendChild(row);
+    el.appendChild(expand);
+    // Restore open state if this was open before rebuild — and re-fetch data
+    if (openSpecies === s.common_name) {
+      expand.classList.add('open');
+      row.classList.add('expanded');
+      loaded = true;
+      if (_speciesDetCache[s.common_name]) {
+        // Use cache — no flash, no fetch
+        _buildSpeciesExpand(expand, _speciesDetCache[s.common_name]);
+      } else {
+        // No cache — fetch fresh
+        expand.innerHTML = '<div style="font-size:10px;color:#475569;padding:2px 0">Loading…</div>';
+        fetch('/api/species/' + encodeURIComponent(s.common_name) + '/detections')
+          .then(r => r.json())
+          .then(dets => { _speciesDetCache[s.common_name] = dets; _buildSpeciesExpand(expand, dets); });
+      }
+    }
+
+    // Load image async
+    fetchBirdImg(s.common_name).then(src => {
+      if (src) {
+        img.onload = () => { img.style.display = ''; icon.style.display = 'none'; };
+        img.src = src;
+      }
+    });
+  });
+  el.scrollTop = scrollTop;
+}
+
+async function refreshStats() {
+  const [todayRes, allRes, recentRes, countRes] = await Promise.all([
+    fetch('/api/species'),
+    fetch('/api/species/all'),
+    fetch('/api/detections?limit=1'),
+    fetch('/api/detections/today/count'),
+  ]);
+  const today  = await todayRes.json();
+  const all    = await allRes.json();
+  const recent = await recentRes.json();
+  const count  = await countRes.json();
+  document.getElementById('stat-today').textContent   = count.count;
+  fetch('/api/sightings').then(r=>r.json()).then(d=>{ const sEl=document.getElementById('stat-sightings'); if(sEl) sEl.textContent=d.sightings; });
+  document.getElementById('stat-species').textContent = today.length;
+  document.getElementById('stat-alltime').textContent = all.length;
+  if (recent.length > 0) updateLastCard(recent[0]);
+}
+
+const _speciesDetCache = {}; // commonName -> [{camera, timestamp, confidence, audio_file}]
+
+async function loadFeed() {
+  const items = await (await fetch(`/api/detections?limit=${window.FEED_CAP}`)).json();
+  items.reverse().forEach(d => { try { addFeedItem(d); } catch(e) { console.warn('addFeedItem error:', e, d); } });
+}
+
+async function sendControl(action) {
+  await fetch('/api/control', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({action}) });
+}
+
+// ── Preload images for all known species at startup ───────────────────────────
+async function preloadAllImages() {
+  try {
+    const species = await (await fetch('/api/species/all')).json();
+    species.forEach(s => {
+      if (!(s.common_name in imgCache)) fetchBirdImg(s.common_name);
+    });
+  } catch(e) {}
+}
+
+(async () => {
+  await loadConfig();
+  await Promise.all([loadFeed(), refreshSpecies(), refreshStats(), refreshActivity()]);
+  setInterval(refreshActivity, 60_000);
+  setInterval(refreshStats,    30_000);
+  preloadAllImages();
+})();
+
+// ── Species detection cache
+function _buildSpeciesExpand(expand, dets) {
+  expand.innerHTML = '';
+  if (!dets.length) { expand.innerHTML = '<div style="font-size:10px;color:#475569;padding:2px 0">No detections found</div>'; return; }
+  const byCam = {};
+  dets.forEach(d => {
+    if (!byCam[d.camera]) { byCam[d.camera] = d; }
+    else if (!byCam[d.camera].audio_file && d.audio_file) { byCam[d.camera] = d; }
+  });
+  Object.entries(byCam).forEach(([cam, d]) => {
+    const cr = document.createElement('div');
+    cr.className = 'sp-expand-row';
+    cr.style.cssText = 'display:flex;align-items:center;gap:7px;padding:4px 0;border-top:1px solid #1a2030';
+    const camBadge = document.createElement('span'); camBadge.className = 'cam-badge'; camBadge.textContent = cam; styleBadge(camBadge, cam);
+    const timeSpan = document.createElement('span'); timeSpan.style.cssText = 'color:#475569;font-size:10px;flex-shrink:0'; timeSpan.textContent = timeStr(d.timestamp);
+    const spacer = document.createElement('span'); spacer.style.flex = '1';
+    const conf = document.createElement('span'); conf.className = 'confidence-pill ' + confClass(d.confidence); conf.style.fontSize = '10px'; conf.textContent = Math.round((d.confidence||0)*100) + '%';
+    const playBtn = _makeReplayBtn(d.audio_file);
+    cr.append(camBadge, timeSpan, spacer, conf, playBtn);
+    expand.appendChild(cr);
+  });
+  if (expand.firstChild) expand.firstChild.style.borderTop = 'none';
+}
+
+// ── Camera colour palette ─────────────────────────────────────────────────────
+const CAM_PALETTE = [
+  { bg:'#1e3a5f', fg:'#93c5fd' },
+  { bg:'#3b1f5e', fg:'#c4b5fd' },
+  { bg:'#1f3d2a', fg:'#86efac' },
+  { bg:'#3d2010', fg:'#fdba74' },
+  { bg:'#3d1515', fg:'#fca5a5' },
+  { bg:'#1a3040', fg:'#67e8f9' },
+  { bg:'#3b2060', fg:'#e9d5ff' },
+];
+const camColourMap = {};
+let camColourIdx = 0;
+
+function camColour(camera) {
+  if (!camera) return { bg:'#1e293b', fg:'#94a3b8' };
+  if (!camColourMap[camera]) {
+    camColourMap[camera] = CAM_PALETTE[camColourIdx % CAM_PALETTE.length];
+    camColourIdx++;
+  }
+  return camColourMap[camera];
+}
+
+function styleChip(chip, camera) {
+  if (!camera) return;
+  const c = camColour(camera);
+  chip.style.background = c.bg;
+  chip.style.color = c.fg;
+  chip.style.borderColor = c.bg;
+}
+
+function styleBadge(badge, camera) {
+  const c = camColour(camera);
+  badge.style.background = c.bg;
+  badge.style.color = c.fg;
+}
+
+// ── Camera filter chips ───────────────────────────────────────────────────────
+let activeCamera = null;
+
+function reloadFeedForCamera(camera) {
+  const feed = document.getElementById('feed');
+  feed.innerHTML = '<div class="empty">Loading…</div>';
+  const url = camera
+    ? `/api/detections?limit=${window.FEED_CAP}&camera=${encodeURIComponent(camera)}`
+    : `/api/detections?limit=${window.FEED_CAP}`;
+  fetch(url)
+    .then(r => r.json())
+    .then(items => {
+      feed.innerHTML = '';
+      items.reverse().forEach(d => { try { addFeedItem(d); } catch(e) { console.warn('addFeedItem:', e); } });
+      applyFilter();
+    });
+}
+
+function applyFilter() {
+  const feed = document.getElementById('feed');
+  const items = feed.querySelectorAll('.detection-item');
+  items.forEach(item => {
+    const cameras = (item.dataset.camera || '').split(',');
+    const match = !activeCamera || cameras.includes(activeCamera);
+    item.style.display = match ? '' : 'none';
+    // For grouped items, also hide/show individual subrows
+    if (activeCamera) {
+      item.querySelectorAll('.cam-subrow').forEach(row => {
+        row.style.display = row.dataset.camera === activeCamera ? '' : 'none';
+      });
+    } else {
+      item.querySelectorAll('.cam-subrow').forEach(row => { row.style.display = ''; });
+    }
+  });
+  const visible = feed.querySelectorAll('.detection-item:not([style*="none"])');
+  let empty = feed.querySelector('.empty');
+  if (visible.length === 0) {
+    if (!empty) { empty = document.createElement('div'); empty.className = 'empty'; feed.appendChild(empty); }
+    empty.textContent = activeCamera ? 'No detections from ' + activeCamera + ' yet' : 'Listening for birds…';
+  } else if (empty) {
+    empty.remove();
+  }
+}
+
+function buildCamChips(cameras) {
+  const bar = document.getElementById('cam-filters');
+  bar.innerHTML = '';
+  const all = document.createElement('button');
+  all.className = 'cam-chip cam-chip-all active';
+  all.dataset.cam = '__all__';
+  all.textContent = 'All cameras';
+  all.onclick = () => { activeCamera = null; bar.querySelectorAll('.cam-chip').forEach(c => c.classList.remove('active')); all.classList.add('active'); reloadFeedForCamera(null); };
+  bar.appendChild(all);
+  cameras.forEach(cam => {
+    const chip = document.createElement('button');
+    chip.className = 'cam-chip';
+    chip.dataset.cam = cam;
+    chip.textContent = cam;
+    styleChip(chip, cam);
+    chip.onclick = () => { activeCamera = cam; bar.querySelectorAll('.cam-chip').forEach(c => c.classList.remove('active')); chip.classList.add('active'); reloadFeedForCamera(cam); };
+    bar.appendChild(chip);
+  });
+}
+
+// Populate chips from today's species (cameras already known to the server)
+fetch('/api/cameras').then(r => r.ok ? r.json() : []).then(cams => {
+  if (cams.length) buildCamChips(cams);
+}).catch(() => {});
+
+// Also add chips dynamically as new cameras appear in the live feed
+function ensureCamChip(camera) {
+  const bar = document.getElementById('cam-filters');
+  // Always ensure "All cameras" exists as first chip
+  if (!bar.querySelector('[data-cam="__all__"]')) {
+    const all = document.createElement('button');
+    all.className = 'cam-chip cam-chip-all' + (activeCamera === null ? ' active' : '');
+    all.dataset.cam = '__all__';
+    all.textContent = 'All cameras';
+    all.onclick = () => { activeCamera = null; bar.querySelectorAll('.cam-chip').forEach(c => c.classList.remove('active')); all.classList.add('active'); reloadFeedForCamera(null); };
+    bar.insertBefore(all, bar.firstChild);
+  }
+  if (!camera || bar.querySelector('[data-cam="' + CSS.escape(camera) + '"]')) return;
+  const chip = document.createElement('button');
+  chip.className = 'cam-chip';
+  chip.dataset.cam = camera;
+  chip.textContent = camera;
+  styleChip(chip, camera);
+  chip.onclick = () => { activeCamera = camera; bar.querySelectorAll('.cam-chip').forEach(c => c.classList.remove('active')); chip.classList.add('active'); applyFilter(); };
+  bar.appendChild(chip);
+}
+
+
+function updateLastCard(data) {
+  const card = document.getElementById('stat-last-card');
+  if (!card) return;
+  // Name & species
+  document.getElementById('stat-last-name').textContent = data.common_name;
+  document.getElementById('stat-last-species').textContent = data.species || '';
+  // Camera & confidence
+  document.getElementById('stat-last-cam').textContent = data.camera || '';
+  document.getElementById('stat-last-conf').textContent = data.confidence ? Math.round(data.confidence * 100) + '%' : '';
+  // Time
+  document.getElementById('stat-last-time').textContent = 'Last detection · ' + timeStr(data.timestamp);
+  // iNaturalist link
+  const url = taxaUrls[data.common_name] || null;
+  // Card itself never navigates — only the image opens iNaturalist
+  card.href = '#';
+  card.onclick = (e) => { e.preventDefault(); return false; };
+  card.style.cursor = 'default';
+  const imgWrap = document.getElementById('stat-last-img-wrap');
+  if (imgWrap) {
+    if (url) {
+      imgWrap.style.cursor = 'pointer';
+      imgWrap.title = 'View on iNaturalist';
+      imgWrap.onclick = (e) => { e.preventDefault(); e.stopPropagation(); window.open(url, '_blank'); };
+    } else {
+      imgWrap.style.cursor = 'default';
+      imgWrap.title = '';
+      imgWrap.onclick = (e) => { e.preventDefault(); e.stopPropagation(); };
+    }
+  }
+  // Audio play button
+  const playBtn = document.getElementById('stat-last-play');
+  if (playBtn) {
+    if (data.audio_file) {
+      playBtn.style.display = 'inline-block';
+      playBtn.onclick = (e) => {
+        e.preventDefault(); e.stopPropagation();
+        if (_curBtn === playBtn) { stopAll(); return; }
+        playBtn.dataset.origLabel = '▶ Play';
+        playBoosted('/api/audio/' + encodeURIComponent(data.audio_file), () => { playBtn.textContent = '▶ Play'; }, playBtn);
+        playBtn.textContent = '⏹ Stop';
+      };
+    } else {
+      playBtn.style.display = 'none';
+    }
+  }
+  // Image
+  const wrap = document.getElementById('stat-last-img-wrap');
+  fetchBirdImg(data.common_name).then(src => {
+    if (!src) return;
+    wrap.innerHTML = '';
+    const img = document.createElement('img');
+    img.src = src;
+    img.style.cssText = 'width:100%;height:100%;object-fit:cover;display:block;position:absolute;top:0;left:0';
+    wrap.style.position = 'relative';
+    wrap.style.height = '100%';
+    wrap.appendChild(img);
+  });
+}
+
+
+// ── Boosted audio playback ────────────────────────────────────────────────────
+const _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+let GAIN = 2.0;
+let _playId    = 0;
+let _curSource = null;
+let _curGain   = null;  // keep reference so slider updates active playback
+let _curBtn    = null;
+
+function stopAll() {
+  _playId++;
+  if (_curSource) { try { _curSource.stop(); } catch(e) {} _curSource = null; }
+  _curGain = null;
+  if (_curBtn) { _curBtn.textContent = _curBtn.dataset.origLabel || '▶ Replay'; _curBtn = null; }
+}
+
+function playBoosted(url, onEnded, btn) {
+  stopAll();
+  const myId = _playId;
+  if (btn) _curBtn = btn;
+  // Resume context — browsers suspend it until a user gesture
+  _audioCtx.resume().then(() => {
+    fetch(url)
+      .then(r => r.arrayBuffer())
+      .then(buf => { if (_playId !== myId) return null; return _audioCtx.decodeAudioData(buf); })
+      .then(decoded => {
+        if (!decoded || _playId !== myId) return;
+        const src  = _audioCtx.createBufferSource();
+        const gain = _audioCtx.createGain();
+        gain.gain.value = GAIN;
+        src.buffer = decoded;
+        src.connect(gain);
+        gain.connect(_audioCtx.destination);
+        src.start(0);
+        _curSource = src;
+        _curGain   = gain;
+        src.addEventListener('ended', () => {
+          if (_playId === myId) { _curSource = null; _curGain = null; _curBtn = null; }
+          if (onEnded) onEnded();
+        });
+      })
+      .catch(err => console.warn('Audio error:', err));
+  });
+}
+
+
+// ── Activity chart zoom & pan ─────────────────────────────────────────────────
+(function() {
+  const canvas = document.getElementById('activityChart');
+  const TOTAL = 24;
+  window.visMin = 0; window.visMax = TOTAL;
+  let dragStart = null;
+
+  function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+
+  window.applyView = function() {
+    const span = visMax - visMin;
+    chart.options.scales.x.min = visMin;
+    chart.options.scales.x.max = visMax;
+    chart.options.scales.x.ticks.maxTicksLimit = Math.max(4, Math.round(span));
+    chart.update('none');
+  };
+
+  // Scroll wheel → zoom around cursor position
+  canvas.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    const rect = canvas.getBoundingClientRect();
+    const xFrac = (e.clientX - rect.left) / rect.width;
+    const span = visMax - visMin;
+    const factor = e.deltaY < 0 ? 0.75 : 1.33;
+    const newSpan = clamp(span * factor, 1, TOTAL);
+    const centre = visMin + xFrac * span;
+    window.visMin = clamp(centre - xFrac * newSpan, 0, TOTAL - newSpan);
+    window.visMax = visMin + newSpan;
+    applyView();
+  }, { passive: false });
+
+  // Click + drag → pan
+  canvas.addEventListener('mousedown', (e) => {
+    dragStart = { x: e.clientX, visMin, visMax };
+    canvas.style.cursor = 'grabbing';
+  });
+
+  window.addEventListener('mousemove', (e) => {
+    if (!dragStart) return;
+    const rect = canvas.getBoundingClientRect();
+    const span = dragStart.visMax - dragStart.visMin;
+    const pxPerHour = rect.width / span;
+    const delta = (dragStart.x - e.clientX) / pxPerHour;
+    window.visMin = clamp(dragStart.visMin + delta, 0, TOTAL - span);
+    window.visMax = visMin + span;
+    applyView();
+  });
+
+  window.addEventListener('mouseup', () => {
+    dragStart = null;
+    canvas.style.cursor = 'default';
+  });
+
+  // Reset zoom button
+  document.getElementById('reset-zoom-btn').onclick = () => {
+    if (document.getElementById('act-3d-view').style.display !== 'none') {
+      if (typeof resetSpZoom === 'function') resetSpZoom();
+    } else {
+      window.visMin = 0; window.visMax = TOTAL;
+      applyView();
+    }
+  };
+})();
+
+
+// ── Species × Hour 3D chart ───────────────────────────────────────────────────
+let _spChartDrawn = false;
+
+function showActivityView(mode) {
+  const barView  = document.getElementById('act-bar-view');
+  const view3d   = document.getElementById('act-3d-view');
+  const barBtn   = document.getElementById('act-bar-btn');
+  const btn3d    = document.getElementById('act-3d-btn');
+  const resetBtn = document.getElementById('reset-zoom-btn');
+  const title    = document.getElementById('activity-title');
+  if (mode === '3d') {
+    barView.style.display = 'none';
+    view3d.style.display  = 'flex';
+
+    const spN = document.getElementById('sp-count-slider')?.value || '12'; title.textContent = 'Top ' + spN + ' species by hour';
+    barBtn.style.cssText  = barBtn.style.cssText + ';border-color:#2a2d3a;color:#64748b;background:transparent';
+    btn3d.style.cssText   = btn3d.style.cssText  + ';border-color:#4ade80;color:#4ade80;background:#4ade8022';
+    // Reset species zoom
+    window.spVisMin = 0; window.spVisMax = 24;
+    if (!_spChartDrawn) {
+      const todayCount = parseInt(document.getElementById('stat-species').textContent) || 20;
+      const slider = document.getElementById('sp-count-slider');
+      if (slider) {
+        slider.max = todayCount;
+        const pct = ((slider.value - slider.min) / (slider.max - slider.min) * 100).toFixed(1) + '%';
+        slider.style.setProperty('--val', pct);
+      }
+      loadAndDraw3D(); _spChartDrawn = true;
+    } else {
+      if (typeof applySpView === 'function') applySpView();
+    }
+  } else {
+    view3d.style.display  = 'none';
+    barView.style.display = 'block';
+
+    title.textContent = "Today's Activity (detections per hour)";
+    // Reset activity chart zoom
+    window.visMin = 0; window.visMax = 24; if (typeof applyView === 'function') applyView();
+    barBtn.style.cssText  = barBtn.style.cssText + ';border-color:#4ade80;color:#4ade80;background:#4ade8022';
+    btn3d.style.cssText   = btn3d.style.cssText  + ';border-color:#2a2d3a;color:#64748b;background:transparent';
+  }
+}
+
+const SP_CSS = ['#4ade80','#60a5fa','#f472b6','#fb923c','#a78bfa','#34d399','#f87171','#fbbf24','#e879f9','#38bdf8'];
+let _spLineChart = null;
+
+// ── Species chart load/reload ─────────────────────────────────────────────────
+function _spFetch() {
+  const todayStr = new Date().toISOString().slice(0,10);
+  const DAY_MS   = new Date(todayStr + 'T00:00:00').getTime();
+  const spanMs   = (window.spZoomMax || 0) - (window.spZoomMin || 0);
+  const bucket   = spanMs <= 1800000  ? 5  :
+                   spanMs <= 10800000 ? 15 :
+                   spanMs <= 21600000 ? 30 : 60;
+  const lo = Math.max(0,  Math.floor(((window.spZoomMin || DAY_MS) - DAY_MS) / 3600000));
+  const hi = Math.min(23, Math.ceil( ((window.spZoomMax || DAY_MS + 86400000) - DAY_MS) / 3600000));
+  const n  = parseInt(document.getElementById('sp-count-slider')?.value || '12');
+  return fetch(`/api/species-hourly?n=${n}&bucket=${bucket}&start=${lo}&end=${hi}`)
+    .then(r => r.json());
+}
+
+function loadAndDraw3D() {
+  const _nd = new Date();
+  const todayStr = _nd.getFullYear() + '-' + String(_nd.getMonth()+1).padStart(2,'0') + '-' + String(_nd.getDate()).padStart(2,'0');
+  window.spZoomMin = new Date(todayStr + 'T00:00:00').getTime();
+  window.spZoomMax = new Date(todayStr + 'T23:59:59').getTime();
+  return _spFetch().then(data => {
+    const names = Object.keys(data);
+    if (!names.length) return;
+    drawSpeciesLine('speciesHourChart', names, data);
+    // Auto-fit to active data range
+    setTimeout(() => {
+      if (!_spLineChart) return;
+      let dataMin = Infinity, dataMax = -Infinity;
+      _spLineChart.data.datasets.forEach(ds => {
+        ds.data.forEach(p => { if (p && p.y > 0) { dataMin = Math.min(dataMin, p.x); dataMax = Math.max(dataMax, p.x); } });
+      });
+      if (dataMin < Infinity) {
+        const pad = 1800000; // 30 min padding
+        const todayStr2 = new Date().toISOString().slice(0,10);
+        window.spZoomMin = Math.max(new Date(todayStr2 + 'T00:00:00').getTime(), dataMin - pad);
+        window.spZoomMax = Math.min(new Date(todayStr2 + 'T23:59:59').getTime(), dataMax + pad);
+        _spLineChart.options.scales.x.min = spZoomMin;
+        _spLineChart.options.scales.x.max = spZoomMax;
+        _spLineChart.update('none');
+        const c = document.getElementById('speciesHourChart');
+        if (c && c._updateSpLegend) c._updateSpLegend();
+      }
+    }, 50);
+  });
+}
+
+function reloadSpeciesChart() {
+  _spChartDrawn = false;
+  loadAndDraw3D().then(() => { _spChartDrawn = true; });
+}
+
+// ── Species chart zoom & pan ─────────────────────────────────────────────────
+(function() {
+  // Use local midnight for day boundaries
+  const _now = new Date();
+  const todayStr  = _now.getFullYear() + '-' + String(_now.getMonth()+1).padStart(2,'0') + '-' + String(_now.getDate()).padStart(2,'0');
+  const DAY_START = new Date(todayStr + 'T00:00:00').getTime();
+  const DAY_END   = new Date(todayStr + 'T23:59:59').getTime();
+  const MIN_SPAN  = 1800000;  // 30 minutes minimum zoom
+
+  window.spZoomMin = DAY_START;
+  window.spZoomMax = DAY_END;
+
+  let spDragStart = null;
+  let _refetchTimer = null;
+
+  function applyWindow() {
+    if (!_spLineChart) return;
+    _spLineChart.options.scales.x.min = spZoomMin;
+    _spLineChart.options.scales.x.max = spZoomMax;
+    // Hide datasets with no data in visible window
+    _spLineChart.data.datasets.forEach(ds => {
+      const hasData = ds.data.some(p => p.x >= spZoomMin && p.x <= spZoomMax && p.y > 0);
+      ds.hidden = !hasData;
+    });
+    _spLineChart.update('none');
+    const c = document.getElementById('speciesHourChart');
+    if (c && c._updateSpLegend) c._updateSpLegend();
+  }
+
+  function scheduleRefetch() {
+    clearTimeout(_refetchTimer);
+    _refetchTimer = setTimeout(() => {
+      _spFetch().then(data => {
+        if (!_spLineChart || !data) return;
+        const names = Object.keys(data);
+        // Update existing datasets in place
+        _spLineChart.data.datasets.forEach(ds => {
+          if (data[ds.label]) {
+            ds.data = data[ds.label].map(([x,y]) => ({x, y}));
+            ds.pointRadius = ds.data.map(p => p.y > 0 ? 3 : 0);
+          }
+        });
+        applyWindow();
+      });
+    }, 350);
+  }
+
+  window.applySpView = function() {
+    applyWindow();
+    scheduleRefetch();
+  };
+
+  window.resetSpZoom = function() {
+    window.spZoomMin = DAY_START;
+    window.spZoomMax = DAY_END;
+    applyWindow();
+    scheduleRefetch();
+  };
+
+  const spCanvas = document.getElementById('speciesHourChart');
+
+  spCanvas.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    const rect   = spCanvas.getBoundingClientRect();
+    const frac   = (e.clientX - rect.left) / rect.width;
+    const span   = spZoomMax - spZoomMin;
+    const factor = e.deltaY < 0 ? 0.6 : 1.65;
+    const newSpan = Math.max(MIN_SPAN, Math.min(DAY_END - DAY_START, span * factor));
+    const centre  = spZoomMin + frac * span;
+    window.spZoomMin = Math.max(DAY_START, Math.min(DAY_END - newSpan, centre - frac * newSpan));
+    window.spZoomMax = spZoomMin + newSpan;
+    applySpView();
+  }, { passive: false });
+
+  spCanvas.addEventListener('mousedown', (e) => {
+    spDragStart = { x: e.clientX, min: spZoomMin, max: spZoomMax };
+    spCanvas.style.cursor = 'grabbing';
+  });
+  window.addEventListener('mousemove', (e) => {
+    if (!spDragStart) return;
+    const rect   = spCanvas.getBoundingClientRect();
+    const span   = spDragStart.max - spDragStart.min;
+    const pxPerMs = rect.width / span;
+    const delta   = (spDragStart.x - e.clientX) / pxPerMs;
+    window.spZoomMin = Math.max(DAY_START, Math.min(DAY_END - span, spDragStart.min + delta));
+    window.spZoomMax = spZoomMin + span;
+    applySpView();
+  });
+  window.addEventListener('mouseup', () => {
+    spDragStart = null;
+    spCanvas.style.cursor = 'default';
+  });
+})();
+
+function drawSpeciesLine(canvasId, names, data) {
+  const canvas = document.getElementById(canvasId);
+  if (!canvas) return;
+
+  const todayStr = new Date().toISOString().slice(0,10);
+  const dayStart = new Date(todayStr + 'T00:00:00').getTime();
+  const dayEnd   = new Date().getTime();
+  const initMin  = window.spZoomMin || dayStart;
+  const initMax  = window.spZoomMax || dayEnd;
+  // No animation for smooth zoom
+
+  if (_spLineChart) { _spLineChart.destroy(); _spLineChart = null; }
+
+  _spLineChart = new Chart(canvas, {
+    type: 'line',
+    data: {
+      datasets: names.map((name, i) => ({
+        label: name,
+        data: data[name].map(([x, y]) => ({x, y})),
+        borderColor: SP_CSS[i % SP_CSS.length],
+        backgroundColor: 'transparent',
+        borderWidth: 2,
+        pointRadius: data[name].map(([,v]) => v > 0 ? 3 : 0),
+        pointBackgroundColor: SP_CSS[i % SP_CSS.length],
+        pointBorderColor: '#0f1117',
+        pointBorderWidth: 1.5,
+        tension: 0.35,
+      }))
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: false,
+      plugins: { legend: { display: false }, tooltip: { enabled: false } },
+      scales: {
+        x: {
+          type: 'time',
+          min: initMin,
+          max: initMax,
+          time: { displayFormats: { minute: 'HH:mm', hour: 'HH:mm' }, tooltipFormat: 'HH:mm' },
+          ticks: { color: '#374151', font: { size: 9 }, maxTicksLimit: 8, source: 'auto' },
+          grid: { color: '#1a2030' }
+        },
+        y: { ticks: { color: '#374151', font: { size: 9 }, maxTicksLimit: 5 }, grid: { color: '#1a2030' }, beginAtZero: true }
+      }
+    }
+  });
+
+  // Legend
+  let legEl = document.getElementById('sp-line-legend');
+  if (!legEl) {
+    legEl = document.createElement('div');
+    legEl.id = 'sp-line-legend';
+    legEl.style.cssText = 'display:flex;flex-wrap:wrap;gap:4px 12px;padding:6px 14px;border-top:1px solid #2a2d3a';
+    canvas.parentElement.parentElement.appendChild(legEl);
+  }
+
+  function updateSpLegend() {
+    if (!_spLineChart) return;
+    const xMin = _spLineChart.options.scales.x.min;
+    const xMax = _spLineChart.options.scales.x.max;
+    legEl.innerHTML = names.map((n,i) => {
+      const d = _spLineChart.data.datasets[i];
+      const hasData = d && d.data.some(p => p.x >= xMin && p.x <= xMax && p.y > 0);
+      if (!hasData) return '';
+      const col = SP_CSS[i % SP_CSS.length];
+      return `<span style="display:flex;align-items:center;gap:5px;font-size:10px;color:#64748b">
+        <svg width="18" height="10"><line x1="0" y1="5" x2="18" y2="5" stroke="${col}" stroke-width="2"/><circle cx="9" cy="5" r="3" fill="${col}" stroke="#0f1117" stroke-width="1.5"/></svg>
+        ${n}
+      </span>`;
+    }).join('');
+  }
+  updateSpLegend();
+  canvas._updateSpLegend = updateSpLegend;
+  // Hide datasets with no data in initial window
+  if (typeof applySpView === 'function') applySpView();
+}
+// ── Loudness control ──────────────────────────────────────────────────────────
+function updateLoudness(slider) {
+  const pct = ((slider.value - slider.min) / (slider.max - slider.min) * 100).toFixed(1) + '%';
+  slider.style.setProperty('--val', pct);
+  const v = parseFloat(slider.value);
+  GAIN = v;
+  document.getElementById('loudness-val').textContent = v.toFixed(1);
+  if (_curGain) _curGain.gain.setTargetAtTime(GAIN, _audioCtx.currentTime, 0.01);
+}
+// Load current loudness on page load
+// Set initial slider fill
+(function() {
+  const s = document.getElementById('loudness-slider');
+  if (s) {
+    const pct = ((s.value - s.min) / (s.max - s.min) * 100).toFixed(1) + '%';
+    s.style.setProperty('--val', pct);
+    GAIN = parseFloat(s.value);
+  }
+})();
+
+
+// ── Feed cap slider ───────────────────────────────────────────────────────────
+function updateFeedCap(val) {
+  window.FEED_CAP = parseInt(val);
+  document.getElementById('feed-cap-val').textContent = val;
+  const feed = document.getElementById('feed');
+  // Always reload from server so count exactly matches slider
+  feed.innerHTML = '<div class="empty">Loading…</div>';
+  fetch(`/api/detections?limit=${window.FEED_CAP}` + (activeCamera ? `&camera=${encodeURIComponent(activeCamera)}` : ''))
+    .then(r => r.json())
+    .then(items => {
+      feed.innerHTML = '';
+      items.reverse().forEach(d => { try { addFeedItem(d); } catch(e) { console.warn('addFeedItem:', e); } });
+    });
+}
+
+</script>
+</body>
+</html>
