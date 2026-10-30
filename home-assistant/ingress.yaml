@@ -1,0 +1,9 @@
+# Puts the BirdWatch web UI in the Home Assistant sidebar.
+# Needs the hass_ingress integration (HACS: lovelylain/hass_ingress).
+# Add to configuration.yaml, or to a package file such as packages/ingress.yaml.
+# Replace the address with your BirdWatch host.
+ingress:
+  birdwatch:
+    title: Bird Watch
+    icon: mdi:bird
+    url: http://192.168.1.20:8080

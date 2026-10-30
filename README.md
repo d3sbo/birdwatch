@@ -101,7 +101,7 @@ If you'd rather not run that listener, use the soft pause/resume nodes instead: 
 - `home-assistant/helpers.yaml` creates the `input_button.start_birdwatch` / `stop_birdwatch` buttons the flow listens for.
 - `home-assistant/dashboard-birdwatch.yaml` has cards showing the last bird, camera, confidence and status, plus the start/stop buttons. It uses only built-in cards.
 - `home-assistant/dashboard-birdwatch-retro.yaml` has the same cards in a green-on-black terminal style. It needs the `custom:button-card` card from HACS.
-- `home-assistant/dashboard-birdwatch-iframe.yaml` is a whole dashboard that just embeds the BirdWatch web UI.
+- `home-assistant/ingress.yaml` puts the full BirdWatch web UI in the HA sidebar, using the [hass_ingress](https://github.com/lovelylain/hass_ingress) integration from HACS. The dashboard works under the ingress path without changes.
 
 The `sensor.birdwatch_*` entities come from the app's MQTT discovery, so they appear on their own once MQTT is configured.
 
