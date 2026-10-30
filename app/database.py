@@ -11,7 +11,47 @@ from datetime import datetime, date
 from zoneinfo import ZoneInfo
 
 DB_PATH = "/data/birdwatch.db"
-_lock   = threading.Lock()
+from eventlet import patcher, tpool
+
+# All database work runs in eventlet's real-thread pool (tpool): the database
+# lives on a Windows folder shared into Docker, where file access is slow, and a
+# query run directly froze the whole app (web page, live feed, MQTT, captures)
+# until it finished - 19 s for get_all_time_species at one startup. Because the
+# work happens in real OS threads, the lock must be a real OS lock too.
+_lock   = patcher.original("threading").Lock()
+
+# ── Read cache ───────────────────────────────────────────────────────────────
+# Every open dashboard polls the same summary queries (several every 30 s, and
+# again on each live detection). Answers are kept for a few seconds and dropped
+# whenever a new detection is saved, so pages stay current without re-running
+# the same GROUP BY for every tab.
+_CACHE_TTL = 5.0
+_cache: dict = {}
+
+def _offload(fn):
+    """Run fn in a real thread so slow disk access can't freeze the app."""
+    def wrapper(*args, **kwargs):
+        return tpool.execute(fn, *args, **kwargs)
+    wrapper.__name__ = fn.__name__
+    wrapper.__doc__ = fn.__doc__
+    return wrapper
+
+def _cached(fn):
+    def wrapper(*args, **kwargs):
+        key = (fn.__name__, args, tuple(sorted(kwargs.items())))
+        hit = _cache.get(key)
+        now = time.time()
+        if hit and now - hit[0] < _CACHE_TTL:
+            return hit[1]
+        value = tpool.execute(fn, *args, **kwargs)
+        _cache[key] = (now, value)
+        return value
+    wrapper.__name__ = fn.__name__
+    wrapper.__doc__ = fn.__doc__
+    return wrapper
+
+def _clear_cache():
+    _cache.clear()
 LONDON  = ZoneInfo("Europe/London")
 
 
@@ -19,6 +59,7 @@ def _now():
     return datetime.now(tz=LONDON)
 
 
+@_offload
 def init_db():
     with _lock:
         conn = sqlite3.connect(DB_PATH)
@@ -47,6 +88,7 @@ def init_db():
         conn.close()
 
 
+@_offload
 def save_detection(camera: str, common_name: str, species: str,
                    confidence: float, audio_file: str = None):
     now = _now()
@@ -61,6 +103,7 @@ def save_detection(camera: str, common_name: str, species: str,
         )
         conn.commit()
         conn.close()
+    _clear_cache()
 
 
 _audio_cache: set = set()
@@ -78,6 +121,7 @@ def _audio_files_set() -> set:
     return _audio_cache
 
 
+@_cached
 def get_recent_detections(limit: int = 50) -> list[dict]:
     with _lock:
         conn = sqlite3.connect(DB_PATH)
@@ -96,6 +140,7 @@ def get_recent_detections(limit: int = 50) -> list[dict]:
     return result
 
 
+@_offload
 def get_today_detections(limit: int = 200) -> list[dict]:
     today = _now().date().isoformat()
     with _lock:
@@ -109,6 +154,7 @@ def get_today_detections(limit: int = 200) -> list[dict]:
     return [dict(r) for r in rows]
 
 
+@_cached
 def get_today_count() -> int:
     today = _now().date().isoformat()
     with _lock:
@@ -120,6 +166,7 @@ def get_today_count() -> int:
     return row[0] if row else 0
 
 
+@_cached
 def get_today_species() -> list[dict]:
     today = _now().date().isoformat()
     with _lock:
@@ -145,6 +192,7 @@ def get_today_species() -> list[dict]:
     return [dict(r) for r in rows]
 
 
+@_cached
 def get_hourly_activity() -> dict[str, int]:
     today = _now().date().isoformat()
     with _lock:
@@ -164,6 +212,7 @@ def get_hourly_activity() -> dict[str, int]:
     return hourly
 
 
+@_cached
 def get_all_time_species() -> list[dict]:
     with _lock:
         conn = sqlite3.connect(DB_PATH)
@@ -184,6 +233,7 @@ def get_all_time_species() -> list[dict]:
     return [dict(r) for r in rows]
 
 
+@_cached
 def get_cameras() -> list[str]:
     """Return all distinct camera names ever seen, ordered by first detection."""
     with _lock:
@@ -198,6 +248,7 @@ def get_cameras() -> list[str]:
     return [r[0] for r in rows]
 
 
+@_offload
 def get_species_hourly(top_n: int = 5) -> dict:
     """Return hourly detection counts for the top N species today.
     Returns { species: [count_h0, count_h1, ..., count_h23], ... }
@@ -235,6 +286,7 @@ def get_species_hourly(top_n: int = 5) -> dict:
     return result
 
 
+@_cached
 def get_today_sightings() -> int:
     """Count distinct sightings today — groups detections of the same species
     within 30 seconds as a single sighting."""
@@ -273,6 +325,7 @@ def get_today_sightings() -> int:
     return sightings
 
 
+@_cached
 def get_species_detections_today(common_name: str) -> list[dict]:
     """Return all detections for a species today with camera, timestamp and audio_file."""
     today = _now().date().isoformat()
@@ -295,6 +348,7 @@ def get_species_detections_today(common_name: str) -> list[dict]:
     return result
 
 
+@_cached
 def get_recent_detections_by_camera(camera: str, limit: int = 50) -> list[dict]:
     """Return today's detections for a specific camera, falling back to recent if not enough."""
     today = _now().date().isoformat()
@@ -317,6 +371,7 @@ def get_recent_detections_by_camera(camera: str, limit: int = 50) -> list[dict]:
     return result
 
 
+@_cached
 def get_species_bucketed(top_n: int = 12, bucket_minutes: int = 60,
                           start_hour: int = 0, end_hour: int = 23) -> dict:
     """Return detection counts bucketed by time interval for top N species today."""

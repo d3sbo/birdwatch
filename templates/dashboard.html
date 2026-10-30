@@ -282,7 +282,9 @@
 <script>
 // ── Subpath proxy support ─────────────────────────────────────────────────────
 (function() {
-  const base = window.location.pathname.startsWith('/bird-watch') ? '/bird-watch' : '';
+  // The folder this page was loaded from: '' direct, '/bird-watch' behind NPM,
+  // '/api/ingress/<token>' inside Home Assistant (hass_ingress).
+  const base = window.location.pathname.replace(/\/[^\/]*$/, '');
   const orig = window.fetch.bind(window);
   window.fetch = (url, opts) => orig(
     typeof url === 'string' && url.startsWith('/') ? base + url : url, opts
@@ -300,7 +302,8 @@ async function loadConfig() {
     const s = document.getElementById('feed-cap-slider');
     if (s) { s.max = window.FEED_CAP; s.value = feedDefault; document.getElementById('feed-cap-val').textContent = feedDefault; }
     updateFeedCap(feedDefault);
-  } catch(e) {}
+    return true;                     // updateFeedCap has already loaded the feed
+  } catch(e) { return false; }
 }
 
 // ── Clock ────────────────────────────────────────────────────────────────────
@@ -326,7 +329,9 @@ function refreshFeedImages() {
     });
   });
 }
-setInterval(refreshFeedImages, 4000);
+// Was every 4 s: each open tab re-asked for every missing picture (404s)
+// non-stop. Once a minute is plenty, and not at all while the tab is hidden.
+setInterval(() => { if (!document.hidden) refreshFeedImages(); }, 60000);
 
 const socket = io({
     path: (window._bwBase || '') + '/socket.io',
@@ -341,10 +346,16 @@ socket.on('disconnect', () => {
   document.getElementById('status-text').textContent = 'disconnected';
   document.getElementById('status-dot').classList.add('paused');
 });
+// Several cameras often hear the same bird within seconds; redraw the species
+// list and totals once for the burst instead of once per detection.
+let _refreshTimer = null;
+function scheduleRefresh() {
+  clearTimeout(_refreshTimer);
+  _refreshTimer = setTimeout(() => { refreshSpecies(); refreshStats(); }, 3000);
+}
 socket.on('detection', (data) => {
   addFeedItem(data);
-  refreshSpecies();
-  refreshStats();
+  scheduleRefresh();
   updateLastCard(data);
   // Silently refresh species detection cache in background — no flash
   fetch('/api/species/' + encodeURIComponent(data.common_name) + '/detections')
@@ -393,7 +404,7 @@ function loadTaxaUrls(cb) {
   }).catch(() => { if (cb) cb(); });
 }
 loadTaxaUrls();  // initial load
-setInterval(loadTaxaUrls, 30000);  // refresh every 30s
+setInterval(() => { if (!document.hidden) loadTaxaUrls(); }, 30000);  // refresh every 30s (visible tabs only)
 
 async function fetchBirdImg(commonName) {
   if (commonName in imgCache) return imgCache[commonName];
@@ -748,11 +759,16 @@ async function preloadAllImages() {
 }
 
 (async () => {
-  await loadConfig();
-  await Promise.all([loadFeed(), refreshSpecies(), refreshStats(), refreshActivity()]);
-  setInterval(refreshActivity, 60_000);
-  setInterval(refreshStats,    30_000);
-  preloadAllImages();
+  const feedLoaded = await loadConfig();
+  await Promise.all([feedLoaded ? null : loadFeed(), refreshSpecies(), refreshStats(), refreshActivity()]);
+  // Background tabs don't poll; they catch up as soon as they're looked at.
+  setInterval(() => { if (!document.hidden) refreshActivity(); }, 60_000);
+  setInterval(() => { if (!document.hidden) refreshStats(); },    30_000);
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) { refreshActivity(); refreshStats(); refreshSpecies(); }
+  });
+  // preloadAllImages() used to request a picture for every species ever seen
+  // (130+ requests) on each page load; pictures now load as they're shown.
 })();
 
 // ── Species detection cache

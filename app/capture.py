@@ -7,6 +7,8 @@ Handles stream drops and reconnects automatically.
 
 import os
 import subprocess
+
+from eventlet import tpool
 import threading
 import time
 import logging
@@ -32,6 +34,7 @@ class AudioCapture:
         self._paused = False
         self._callbacks: list = []
         self._thread: threading.Thread | None = None
+        self._last_cleanup = 0.0
 
     # ── Public API ────────────────────────────────────────────────────────────
 
@@ -110,7 +113,12 @@ class AudioCapture:
                             cb(str(output_file), self.camera_name)
                         except Exception as e:
                             logger.error(f"[{self.camera_name}] Callback error: {e}")
-                    self._cleanup_old_chunks()
+                    # Listing + stat-ing every chunk after every clip froze the whole
+                    # app for seconds on the Windows-shared data folder. Every
+                    # 10 minutes, in a real thread, is plenty.
+                    if time.time() - self._last_cleanup > 600:
+                        self._last_cleanup = time.time()
+                        tpool.execute(self._cleanup_old_chunks)
                 else:
                     err = result.stderr.decode(errors="replace")[:300]
                     logger.warning(f"[{self.camera_name}] ffmpeg failed (rc={result.returncode}): {err}")

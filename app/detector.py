@@ -1,21 +1,29 @@
 """
-detector.py  –  Wraps birdnetlib to analyse a WAV file and return detections.
-The Analyzer is loaded once at startup (heavy model load) and reused.
-TFLite interpreter is not thread-safe — a lock serialises concurrent calls.
+detector.py  –  Analyses a WAV file with BirdNET and returns detections.
+
+BirdNET runs in its own process (detector_worker.py), started once and reused.
+The app runs on eventlet (everything shares one thread), and BirdNET's audio
+preparation is plain Python, so running it inside the app froze the web page,
+the live Socket.IO link and MQTT while each chunk was analysed. Talking to a
+separate process over a pipe lets eventlet keep serving everything else.
+
+Same interface as before: BirdDetector(lat, lon, min_conf).analyze(path).
 """
 
+import json
 import logging
+import subprocess
+import sys
 import threading
-from datetime import datetime
 from pathlib import Path
-from zoneinfo import ZoneInfo
 
-LONDON = ZoneInfo('Europe/London')
-
-from birdnetlib import Recording
-from birdnetlib.analyzer import Analyzer
+import eventlet
 
 logger = logging.getLogger(__name__)
+
+WORKER = str(Path(__file__).with_name("detector_worker.py"))
+STARTUP_TIMEOUT = 300     # first start can download/load the model
+ANALYSE_TIMEOUT = 120     # one 15 s chunk normally takes a few seconds
 
 
 class BirdDetector:
@@ -23,53 +31,56 @@ class BirdDetector:
         self.latitude = latitude
         self.longitude = longitude
         self.min_confidence = min_confidence
-        self._lock = threading.Lock()   # TFLite interpreter is not thread-safe
-
-        logger.info("Loading BirdNET model (this takes ~20 s on first run)…")
-        self.analyzer = Analyzer()
+        self._lock = threading.Lock()   # one request at a time on the pipe
+        self._proc = None
+        logger.info("Loading BirdNET model in its own process (this takes ~20 s on first run)…")
+        self._start()
         logger.info("✅ BirdNET model loaded")
 
+    # ── worker process ────────────────────────────────────────────────────────
+    def _start(self):
+        self._proc = subprocess.Popen(
+            [sys.executable, "-u", WORKER,
+             str(self.latitude), str(self.longitude), str(self.min_confidence)],
+            stdin=subprocess.PIPE, stdout=subprocess.PIPE,   # stderr -> container log
+            text=True, bufsize=1,
+        )
+        with eventlet.Timeout(STARTUP_TIMEOUT):
+            line = self._proc.stdout.readline()
+        if not line or not json.loads(line).get("ready"):
+            raise RuntimeError("BirdNET worker failed to start - see the log above")
+
+    def _stop(self):
+        if self._proc and self._proc.poll() is None:
+            self._proc.kill()
+        self._proc = None
+
+    # ── public ────────────────────────────────────────────────────────────────
     def analyze(self, audio_path: str) -> list[dict]:
-        """
-        Analyse a WAV file and return a list of detections.
-        Serialised via lock — safe to call from multiple threads.
-        """
+        """Analyse a WAV file. Safe to call from any capture thread."""
         if not Path(audio_path).exists():
             logger.warning(f"Audio file not found: {audio_path}")
             return []
 
         with self._lock:
-            try:
-                recording = Recording(
-                    self.analyzer,
-                    audio_path,
-                    lat=self.latitude,
-                    lon=self.longitude,
-                    date=datetime.now(tz=LONDON),
-                    min_conf=self.min_confidence,
-                )
-                recording.analyze()
-
-                results = []
-                seen: set[str] = set()
-
-                for det in recording.detections:
-                    name = det["common_name"]
-                    if name in seen:
-                        continue
-                    seen.add(name)
-                    results.append(
-                        {
-                            "common_name": name,
-                            "species": det["scientific_name"],
-                            "confidence": round(float(det["confidence"]), 3),
-                            "start_time": det["start_time"],
-                            "end_time": det["end_time"],
-                        }
-                    )
-
-                return results
-
-            except Exception as e:
-                logger.error(f"BirdNET analysis failed on {audio_path}: {e}")
-                return []
+            for attempt in (1, 2):                   # one automatic restart if the worker died
+                try:
+                    if self._proc is None or self._proc.poll() is not None:
+                        logger.warning("BirdNET worker not running - starting it")
+                        self._start()
+                    self._proc.stdin.write(json.dumps({"path": audio_path}) + "\n")
+                    self._proc.stdin.flush()
+                    with eventlet.Timeout(ANALYSE_TIMEOUT):
+                        line = self._proc.stdout.readline()
+                    if not line:
+                        raise RuntimeError("worker closed its output")
+                    reply = json.loads(line)
+                    if not reply.get("ok"):
+                        logger.error(f"BirdNET analysis failed on {audio_path}: {reply.get('error')}")
+                        return []
+                    return reply["detections"]
+                except (Exception, eventlet.Timeout) as e:
+                    logger.error(f"BirdNET worker problem ({e!r}) - restarting it"
+                                 + (", retrying this chunk" if attempt == 1 else ""))
+                    self._stop()
+            return []

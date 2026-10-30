@@ -14,7 +14,9 @@ logger = logging.getLogger(__name__)
 
 app = Flask(__name__, template_folder="../templates", static_folder="../static")
 app.config["SECRET_KEY"] = "birdwatch-key-change-me"
-socketio = SocketIO(app, cors_allowed_origins="*", async_mode="eventlet", logger=False, engineio_logger=False)
+# ping_timeout 60 (default 20): a busy moment no longer shows "disconnected"
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode="eventlet", logger=False,
+                    engineio_logger=False, ping_interval=25, ping_timeout=60)
 
 # Injected by main.py
 _pause_fn = None
@@ -170,15 +172,21 @@ def api_audio(filename: str):
     The DB only stores the bare filename, so we search all subdirectories.
     """
     from pathlib import Path
-    # Direct hit (e.g. caller passed camera/chunk.wav)
-    path = Path("/data/audio") / filename
-    if path.exists() and path.suffix == ".wav":
-        return send_file(str(path), mimetype="audio/wav")
-    # Fallback: search all camera subdirectories for the bare filename
-    name = Path(filename).name
-    for wav in Path("/data/audio").rglob(name):
-        if wav.suffix == ".wav":
-            return send_file(str(wav), mimetype="audio/wav")
+    from eventlet import tpool
+
+    def _find():                       # real thread: searching the shared folder is slow
+        path = Path("/data/audio") / filename
+        if path.exists() and path.suffix == ".wav":
+            return path
+        name = Path(filename).name     # bare filename: search the camera folders
+        for wav in Path("/data/audio").rglob(name):
+            if wav.suffix == ".wav":
+                return wav
+        return None
+
+    found = tpool.execute(_find)
+    if found:
+        return send_file(str(found), mimetype="audio/wav")
     return jsonify({"error": "not found"}), 404
 
 

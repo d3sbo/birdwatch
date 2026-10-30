@@ -15,6 +15,7 @@ Startup sequence:
 # capture threads silently fails and the live feed never updates.
 import eventlet
 eventlet.monkey_patch()
+from eventlet import tpool
 
 import os
 import sys
@@ -100,15 +101,25 @@ def get_status() -> str:
 AUDIO_RETAIN_HOURS = float(os.getenv("AUDIO_RETAIN_HOURS", "24"))
 AUDIO_LOUDNESS_TARGET = os.getenv("AUDIO_LOUDNESS_TARGET", "-14")
 
+_last_cleanup = 0.0
+
 def _cleanup_old_audio():
-    """Delete audio chunks older than AUDIO_RETAIN_HOURS."""
+    """Delete audio chunks older than AUDIO_RETAIN_HOURS (at most every 10 minutes -
+    it walks every camera folder, which is wasted work after each detection)."""
+    global _last_cleanup
+    if time.time() - _last_cleanup < 600:
+        return
+    _last_cleanup = time.time()
     cutoff = time.time() - AUDIO_RETAIN_HOURS * 3600
-    for f in Path("/data/audio").rglob("chunk_*.wav"):
-        try:
-            if f.stat().st_mtime < cutoff:
-                f.unlink(missing_ok=True)
-        except Exception:
-            pass
+
+    def _sweep():                      # runs in a real thread: slow shared folder
+        for f in Path("/data/audio").rglob("chunk_*.wav"):
+            try:
+                if f.stat().st_mtime < cutoff:
+                    f.unlink(missing_ok=True)
+            except Exception:
+                pass
+    tpool.execute(_sweep)
 
 
 # ── Detection callback ────────────────────────────────────────────────────────
@@ -123,7 +134,7 @@ def on_audio_chunk(audio_path: str, camera_name: str):
                                     det["confidence"], audio_file=audio_filename)
             img_module.download_image(det["common_name"], det["species"])
 
-            audio_exists = any(Path("/data/audio").rglob(audio_filename))
+            audio_exists = Path(audio_path).exists()   # the chunk we just analysed
             event = {
                 "camera":      camera_name,
                 "common_name": det["common_name"],
@@ -169,6 +180,10 @@ if __name__ == "__main__":
     signal.signal(signal.SIGTERM, shutdown)
     signal.signal(signal.SIGINT,  shutdown)
 
+    # Logs the exact line of code whenever the app freezes (see watchdog.py)
+    import watchdog
+    watchdog.start()
+
     # Ensure data directories exist
     Path("/data/audio").mkdir(parents=True, exist_ok=True)
     database.init_db()
@@ -177,11 +192,14 @@ if __name__ == "__main__":
     def _preload_images():
         time.sleep(5)  # wait for everything to settle
         known = database.get_all_time_species()
-        logger.info(f"🖼  Pre-loading images for {len(known)} known species...")
-        for s in known:
-            if not img_module.has_image(s["common_name"]) or img_module.get_taxon_url(s["common_name"]) is None:
-                img_module._fetch(s["common_name"], s["species"])
-                time.sleep(1)  # 1s gap between requests
+        # 134 file checks + a taxa file read each: do them in a real thread
+        missing = tpool.execute(lambda: [
+            s for s in known
+            if not img_module.has_image(s["common_name"]) or img_module.get_taxon_url(s["common_name"]) is None])
+        logger.info(f"🖼  Pre-loading images: {len(known)} known species, {len(missing)} still need a picture/link")
+        for s in missing:
+            img_module._fetch(s["common_name"], s["species"])
+            time.sleep(1)  # 1s gap between requests
 
     threading.Thread(target=_preload_images, daemon=True, name="img-preload").start()
 

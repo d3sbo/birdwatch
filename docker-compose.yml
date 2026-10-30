@@ -45,7 +45,7 @@ services:
       - secrets.env
 
     volumes:
-      - ./data:/data
+      - birdwatch_data:/data
       - ./app:/app/app
       - ./templates:/app/templates
 
@@ -56,3 +56,7 @@ services:
             - driver: nvidia
               count: 1
               capabilities: [gpu]
+
+volumes:
+  birdwatch_data:
+    external: true
