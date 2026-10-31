@@ -150,6 +150,8 @@
         <span class="chip" data-p="month">30 days</span>
         <span class="chip" data-p="all">All time</span>
       </div>
+      <label class="sl"><span>Movement arrows: at least</span><b id="tripsLabel"></b></label>
+      <input type="range" id="trips" min="1" max="30" step="1">
     </div>
 
     <div class="card">
@@ -255,8 +257,9 @@ function draw() {
   if (state.layers.paths && !state.edit && stats.moves.length) {
     const byName = Object.fromEntries(cams.map(c => [c.name, c]));
     const pm = Math.max(...stats.moves.map(m => m.count));
-    const minShow = Math.max(2, Math.ceil(pm * .08));     // hide one-off coincidences so the main routes stand out
-    stats.moves.filter(m => m.count >= minShow || pm < 3).forEach(m => {
+    // Loud birds are often heard on several mics, which makes plenty of weak
+    // "routes". Show only the strongest (12 at most) so the real ones stand out.
+    stats.moves.filter(m => m.count >= minTrips()).slice(0, 12).forEach(m => {
       const A = byName[m.from], B = byName[m.to]; if (!A || !B) return;
       const a = px(A), b = px(B), dx = b.x - a.x, dy = b.y - a.y, L = Math.hypot(dx, dy) || 1;
       const bow = Math.min(L * .25, W / 20), cx = (a.x + b.x) / 2 - dy / L * bow, cy = (a.y + b.y) / 2 + dx / L * bow;
@@ -339,6 +342,16 @@ async function loadLayout() {
   if (!state.sel && layout.cameras.length) state.sel = layout.cameras[0].name;
 }
 
+let tripsTouched = false;
+const minTrips = () => +$('#trips').value || 1;
+function autoTrips() {        // default: a quarter of the busiest route, never below 3
+  const pm = Math.max(0, ...stats.moves.map(m => m.count));
+  const el = $('#trips'); el.max = Math.max(5, pm);
+  if (!tripsTouched) el.value = Math.min(pm || 1, Math.max(3, Math.ceil(pm * .25)));
+  const shown = stats.moves.filter(m => m.count >= minTrips()).slice(0, 12).length;
+  $('#tripsLabel').textContent = `${minTrips()} trip${minTrips() === 1 ? '' : 's'} · ${shown} of ${stats.moves.length} routes`;
+}
+$('#trips').oninput = () => { tripsTouched = true; autoTrips(); draw(); };
 let statsBusy = false;
 async function loadStats() {
   if (statsBusy) return; statsBusy = true;
@@ -351,14 +364,15 @@ async function loadStats() {
     if (cur && !stats.species.some(([n]) => n === cur)) sel.insertAdjacentHTML('beforeend', `<option value="${esc(cur)}" selected>${esc(cur)} (0)</option>`);
   } catch (e) { console.warn('map stats', e); }
   statsBusy = false;
+  autoTrips();
   draw();
 }
 
 // ── Controls ─────────────────────────────────────────────────────────────────
-$('#species').onchange = e => { state.species = e.target.value; loadStats(); };
+$('#species').onchange = e => { state.species = e.target.value; tripsTouched = false; loadStats(); };
 $('#period').onclick = e => {
   const p = e.target.dataset.p; if (!p) return;
-  state.period = p; document.querySelectorAll('#period .chip').forEach(c => c.classList.toggle('on', c.dataset.p === p)); loadStats();
+  state.period = p; tripsTouched = false; document.querySelectorAll('#period .chip').forEach(c => c.classList.toggle('on', c.dataset.p === p)); loadStats();
 };
 document.querySelectorAll('[data-layer]').forEach(b => b.onclick = () => {
   const k = b.dataset.layer; state.layers[k] = !state.layers[k]; b.classList.toggle('on', state.layers[k]);
