@@ -5,9 +5,10 @@ Three checks, run every few minutes for each camera:
 
   no_audio   No recording has succeeded for HEALTH_NO_AUDIO_MIN minutes
              (stream down, go2rtc lost it, camera offline).
-  silent     Recordings arrive but are near-silent: the median raw peak level
+  silent     Recordings arrive with no sound at all (-inf): audio switched off.
+  quiet      Recordings arrive but very faintly: the median raw peak level
              (measured before Birdwatch boosts the volume) is below
-             HEALTH_SILENT_PEAK_DB. A switched-off mic sends -inf.
+             HEALTH_SILENT_PEAK_DB - typically a blocked mic hole or a failing mic.
   no_birds   In daylight, no birds for HEALTH_NO_BIRDS_HOURS while the other
              cameras heard plenty (median at least HEALTH_BUSY_MIN). This is
              the one that catches a dead or blocked mic that only sends hiss.
@@ -99,10 +100,6 @@ def _detections_since(since_iso: str) -> dict:
     return dict(rows)
 
 
-def _fmt_db(v):
-    return "no signal at all" if v is None or v == -math.inf else f"peak {v:.0f} dB"
-
-
 def evaluate() -> dict:
     now = time.time()
     paused = _is_paused()
@@ -111,6 +108,13 @@ def evaluate() -> dict:
     daylight = _sun_elevation(lat, lon) > 5
     since = (datetime.now(tz=database.LONDON) - timedelta(hours=NO_BIRDS_HOURS)).isoformat()
     counts = tpool.execute(_detections_since, since)
+
+    # Each camera's typical peak level over the last 30 min, to compare a quiet one against
+    peaks = {}
+    for cam in _cameras:
+        lv = [x[2] for x in _levels.get(cam, ()) if now - x[0] < LEVEL_WINDOW_S]
+        if lv:
+            peaks[cam] = statistics.median(lv)
 
     result = {}
     for cam in _cameras:
@@ -128,9 +132,16 @@ def evaluate() -> dict:
                 mins = int((now - (last or _started)) / 60)
                 issues.append({"code": "no_audio",
                                "message": f"No audio recorded for {mins} min - is the stream down?"})
-            elif len(recent) >= 20 and peak is not None and peak < SILENT_PEAK_DB:
+            elif len(recent) >= 20 and peak is not None and peak == -math.inf:
                 issues.append({"code": "silent",
-                               "message": f"Microphone is silent ({_fmt_db(peak)}) - is audio switched off?"})
+                               "message": "No sound at all from the microphone - is audio switched off?"})
+            elif len(recent) >= 20 and peak is not None and peak < SILENT_PEAK_DB:
+                ok_peaks = sorted((v for c, v in peaks.items() if c != cam and v >= SILENT_PEAK_DB), reverse=True)
+                others_txt = (f", other cameras {ok_peaks[0]:.0f} to {ok_peaks[-1]:.0f} dB" if len(ok_peaks) > 1
+                              else f", other cameras {ok_peaks[0]:.0f} dB" if ok_peaks else "")
+                issues.append({"code": "quiet",
+                               "message": f"Microphone is very quiet (peak {peak:.0f} dB{others_txt})"
+                                          f" - mic hole blocked or mic faulty?"})
         if (not paused and daylight and now - _started > NO_BIRDS_HOURS * 3600
                 and n == 0 and others_median >= BUSY_MIN and not issues):
             hrs = f"{NO_BIRDS_HOURS:g} h"

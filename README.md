@@ -101,7 +101,8 @@ If you'd rather not run that listener, use the soft pause/resume nodes instead: 
 Birdwatch checks every camera's audio every 5 minutes and warns when one has stopped hearing properly:
 
 - **No audio**: no recording has worked for 10 minutes (stream down, camera offline)
-- **Silent microphone**: recordings arrive but carry no sound (raw peak below -60 dB, measured before the volume boost)
+- **Silent microphone**: recordings arrive with no sound at all - audio switched off
+- **Very quiet microphone**: raw peak below -60 dB (measured before the volume boost) while the others are far louder - usually a blocked mic hole or a failing mic
 - **No birds**: in daylight, nothing for 2 hours while the other cameras heard at least 10 each - this catches a dead or blocked mic that only sends hiss
 
 Warnings show as a banner on the dashboard, a ⚠ on the Map page, and a "*Camera* audio problem" binary sensor per camera in Home Assistant (MQTT discovery, with the reason and mic level as attributes). `/api/health` returns the details. Thresholds can be changed with `HEALTH_NO_AUDIO_MIN`, `HEALTH_SILENT_PEAK_DB`, `HEALTH_NO_BIRDS_HOURS` and `HEALTH_BUSY_MIN`.
