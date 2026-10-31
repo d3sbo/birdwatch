@@ -146,6 +146,57 @@ def api_loudness():
     return jsonify({"target": getattr(_main, "AUDIO_LOUDNESS_TARGET", "-14")})
 
 
+# ── Map page ──────────────────────────────────────────────────────────────────
+
+@app.route("/map")
+def map_page():
+    return render_template("map.html")
+
+
+@app.route("/api/map/layout", methods=["GET", "PUT"])
+def api_map_layout():
+    import birdmap
+    if request.method == "PUT":
+        body = request.get_json(silent=True) or {}
+        try:
+            birdmap.save_layout(body.get("cameras", []), body.get("north"))
+        except (KeyError, TypeError, ValueError) as e:
+            return jsonify({"ok": False, "error": f"Bad layout: {e}"}), 400
+        return jsonify({"ok": True})
+    layout = birdmap.get_layout()
+    layout["latitude"] = float(os.getenv("LATITUDE", "54.93"))     # same defaults as main.py
+    layout["longitude"] = float(os.getenv("LONGITUDE", "-2.73"))
+    layout["known_cameras"] = database.get_cameras()
+    return jsonify(layout)
+
+
+@app.route("/api/map/background", methods=["GET", "POST"])
+def api_map_background():
+    import birdmap
+    if request.method == "POST":
+        f = request.files.get("file")
+        if not f:
+            return jsonify({"ok": False, "error": "No file"}), 400
+        try:
+            birdmap.save_background(f)
+        except ValueError as e:
+            return jsonify({"ok": False, "error": str(e)}), 400
+        return jsonify({"ok": True})
+    path = birdmap.background_path()
+    if not path:
+        return jsonify({"error": "no background image"}), 404
+    resp = send_file(str(path))
+    resp.headers["Cache-Control"] = "public, max-age=604800"   # URL carries a version
+    return resp
+
+
+@app.route("/api/map/stats")
+def api_map_stats():
+    import birdmap
+    return jsonify(birdmap.get_stats(request.args.get("period", "today"),
+                                     request.args.get("species") or None))
+
+
 # ── Run ───────────────────────────────────────────────────────────────────────
 
 @app.route("/api/taxa-urls")

@@ -176,6 +176,7 @@
 <header>
   <span style="font-size:1.4rem">🐦</span>
   <h1>Bird<span>Watch</span></h1>
+  <a id="map-link" href="map" style="color:var(--muted);text-decoration:none;font-size:0.8rem;border:1px solid var(--border);border-radius:7px;padding:3px 10px;margin-left:6px">🗺 Map</a>
   <span id="status-text">connecting…</span>
   <span id="header-time" style="font-size:0.85rem;color:var(--text);font-variant-numeric:tabular-nums;margin-left:16px"></span>
   <div class="dot" id="status-dot"></div>
@@ -290,6 +291,9 @@
     typeof url === 'string' && url.startsWith('/') ? base + url : url, opts
   );
   window._bwBase = base;
+  document.addEventListener('DOMContentLoaded', () => {
+    const a = document.getElementById('map-link'); if (a) a.href = base + '/map';
+  });
 })();
 
 // ── Config ───────────────────────────────────────────────────────────────────

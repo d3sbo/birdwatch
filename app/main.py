@@ -187,6 +187,8 @@ if __name__ == "__main__":
     # Ensure data directories exist
     Path("/data/audio").mkdir(parents=True, exist_ok=True)
     database.init_db()
+    import birdmap
+    birdmap.init_map()
 
     # Pre-download images for all known species in a background thread
     def _preload_images():

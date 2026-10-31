@@ -96,6 +96,18 @@ If you'd rather not run that listener, use the soft pause/resume nodes instead: 
 - **HA sensor** `sensor.last_bird_detected` updated on every detection
 - **Soft pause/resume** via the `/api/control` REST endpoint
 
+### Map page
+
+`/map` (or the **🗺 Map** button on the dashboard) shows your cameras on an aerial image of your property:
+
+- **View cones** for each camera, shaded by how many birds it has heard (filter by species and by today / 7 days / 30 days / all time)
+- **Hearing range** rings showing roughly how far each microphone reaches
+- **Movements**: arrows where a species was heard on one camera and then on another 15 seconds to 2 minutes later. Two mics hearing the same bird at the same moment isn't counted as a movement.
+- **Sun glare**: which cameras face into a low sun at a given time of day (uses `LATITUDE` / `LONGITUDE`)
+- Live detections flash the camera's cone
+
+Press **✎ Place cameras** to upload a background image, drag each camera into place, aim it, set its view width and say which way north is on the image. The image and layout are stored in `/data/map` (inside the data volume), not in the repo. On first start, `/data/map/layout.json` is imported if it exists.
+
 ### Home Assistant dashboard
 
 - `home-assistant/helpers.yaml` creates the `input_button.start_birdwatch` / `stop_birdwatch` buttons the flow listens for.
