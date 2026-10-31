@@ -101,7 +101,7 @@ If you'd rather not run that listener, use the soft pause/resume nodes instead: 
 `/map` (or the **🗺 Map** button on the dashboard) shows your cameras on an aerial image of your property:
 
 - **Species rings** at each camera: one ring for each of its top 3 species, thicker for more calls (filter by species and by today / 7 days / 30 days / all time). Each species keeps the same colour everywhere
-- **View cones** (optional) showing what each camera can see
+- Live calls light up the camera's dot in the bird's colour, with a ripple
 - **Hearing range** rings showing roughly how far each microphone reaches
 - **Movements**: a ranked list of routes, where a species was heard on one camera and then on another 15 seconds to 2 minutes later. Pick one to draw it on the map. Two mics hearing the same bird at the same moment isn't counted.
 - **Sun glare**: which cameras face into a low sun at a given time of day (uses `LATITUDE` / `LONGITUDE`)
