@@ -105,6 +105,7 @@ If you'd rather not run that listener, use the soft pause/resume nodes instead: 
 - **Movements**: arrows where a species was heard on one camera and then on another 15 seconds to 2 minutes later. Two mics hearing the same bird at the same moment isn't counted as a movement.
 - **Sun glare**: which cameras face into a low sun at a given time of day (uses `LATITUDE` / `LONGITUDE`)
 - Live detections flash the camera's cone
+- **▶ Replay**: plays any day back call by call. Each detection ripples out from its camera in the species' colour, movements show as brief dotted hops, and a bar chart under the slider shows the busy times
 
 Press **✎ Place cameras** to upload a background image, drag each camera into place, aim it, set its view width and say which way north is on the image. The image and layout are stored in `/data/map` (inside the data volume), not in the repo. On first start, `/data/map/layout.json` is imported if it exists.
 

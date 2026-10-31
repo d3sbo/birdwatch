@@ -212,3 +212,67 @@ def _compute_stats(period, species):
         "top": top,
         "moves": [{"from": a, "to": b, "count": n} for (a, b), n in sorted(moves.items(), key=lambda kv: -kv[1])],
     }
+
+
+# ── Day replay ───────────────────────────────────────────────────────────────
+
+_timeline_cache: dict = {}
+
+
+def get_timeline(day: str = None) -> dict:
+    """Every detection on one day (seconds after midnight, camera, species),
+    plus the camera-to-camera moves, timed, for the Map page's replay."""
+    today = datetime.now(tz=LONDON).date().isoformat()
+    try:
+        day = datetime.fromisoformat(day).date().isoformat() if day else today
+    except ValueError:
+        day = today
+    hit = _timeline_cache.get(day)
+    ttl = 20 if day == today else 3600
+    if hit and time.time() - hit[0] < ttl:
+        return hit[1]
+    value = tpool.execute(_compute_timeline, day)
+    _timeline_cache[day] = (time.time(), value)
+    if len(_timeline_cache) > 20:
+        _timeline_cache.pop(next(iter(_timeline_cache)))
+    return value
+
+
+def _compute_timeline(day):
+    with _lock:
+        conn = sqlite3.connect(DB_PATH)
+        rows = conn.execute(
+            "SELECT timestamp, camera, common_name FROM detections WHERE date = ? ORDER BY timestamp",
+            (day,)).fetchall()
+        days = [r[0] for r in conn.execute(
+            "SELECT DISTINCT date FROM detections ORDER BY date DESC LIMIT 60").fetchall()]
+        conn.close()
+
+    detections, per_species = [], {}
+    for ts, cam, name in rows:
+        try:
+            d = datetime.fromisoformat(ts)
+        except Exception:
+            continue
+        sec = d.hour * 3600 + d.minute * 60 + d.second
+        detections.append([sec, cam, name])
+        per_species.setdefault(name, []).append((sec, cam))
+
+    # Same rule as get_stats: heard on B, B quiet for MOVE_MAX_S, and the last
+    # camera to hear it was A, MOVE_MIN_S..MOVE_MAX_S earlier.
+    moves = []
+    for name, evs in per_species.items():
+        last_seen, last_cam = {}, None
+        for sec, cam in evs:
+            prev_here = last_seen.get(cam)
+            if last_cam and last_cam != cam and (prev_here is None or sec - prev_here > MOVE_MAX_S):
+                gap = sec - last_seen[last_cam]
+                if MOVE_MIN_S <= gap <= MOVE_MAX_S:
+                    moves.append([sec, last_cam, cam, name])
+            last_seen[cam] = sec
+            last_cam = cam
+    moves.sort()
+
+    species = sorted(per_species, key=lambda n: -len(per_species[n]))
+    return {"date": day, "days": days, "species": [[n, len(per_species[n])] for n in species],
+            "detections": detections, "moves": moves}

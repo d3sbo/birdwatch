@@ -190,6 +190,12 @@ def api_map_background():
     return resp
 
 
+@app.route("/api/map/timeline")
+def api_map_timeline():
+    import birdmap
+    return jsonify(birdmap.get_timeline(request.args.get("date")))
+
+
 @app.route("/api/map/stats")
 def api_map_stats():
     import birdmap

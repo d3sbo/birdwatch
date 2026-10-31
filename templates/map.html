@@ -71,6 +71,19 @@
   .btnrow { display:flex; gap:6px; flex-wrap:wrap; margin-top:10px; }
   .unplaced { display:flex; justify-content:space-between; align-items:center; font-size:.82rem; padding:4px 0; }
   .hidden { display:none !important; }
+  .player { position:absolute; left:10px; right:10px; bottom:10px; background:#1a1d27ee; border:1px solid var(--border); border-radius:10px; padding:8px 12px; display:flex; gap:12px; align-items:center; z-index:2; }
+  .play { width:38px; height:38px; border-radius:50%; border:1px solid var(--accent); background:transparent; color:var(--accent); font-size:1rem; cursor:pointer; flex-shrink:0; }
+  .track { flex:1; position:relative; height:46px; min-width:0; }
+  .track svg { position:absolute; inset:0 0 14px 0; width:100%; height:32px; }
+  .track input { position:absolute; left:0; right:0; bottom:0; width:100%; margin:0; }
+  .clock { font-variant-numeric:tabular-nums; font-weight:600; min-width:48px; text-align:right; }
+  .speed { background:transparent; border:1px solid var(--border); color:var(--muted); border-radius:6px; padding:3px 7px; font:inherit; font-size:.72rem; cursor:pointer; flex-shrink:0; }
+  .leg { display:flex; align-items:center; gap:8px; font-size:.8rem; padding:2px 0; }
+  .leg i { width:11px; height:11px; border-radius:3px; flex-shrink:0; }
+  .leg .n { margin-left:auto; color:var(--muted); font-variant-numeric:tabular-nums; }
+  .feed div { font-size:.78rem; padding:4px 0; border-bottom:1px solid var(--border); display:flex; gap:7px; }
+  .feed div:last-child { border-bottom:none; }
+  .feed .tm { color:var(--muted); font-variant-numeric:tabular-nums; }
   @media (max-width:600px){
     .legend { display:none; }
     .toolbar { top:6px; left:6px; right:54px; gap:4px; }
@@ -99,11 +112,18 @@
       <button class="btn on" data-layer="paths" title="Heard on one camera, then another">Movements</button>
       <button class="btn" data-layer="sun" title="Cameras facing into a low sun">Sun glare</button>
       <button class="btn" id="editBtn">✎ Place cameras</button>
+      <button class="btn" id="replayBtn" title="Play a day back, call by call">▶ Replay</button>
       <button class="btn warn hidden" id="saveBtn">✓ Save</button>
       <button class="btn hidden" id="cancelBtn">Cancel</button>
     </div>
     <div class="compass" title="Which way north is on this image"><span id="compassN">N↑</span></div>
     <div class="toast" id="toast"></div>
+    <div class="player hidden" id="player">
+      <button class="play" id="playBtn" title="Play / pause">▶</button>
+      <div class="track"><svg id="spark" viewBox="0 0 1440 32" preserveAspectRatio="none"></svg><input type="range" id="scrub" min="0" max="86399" step="30"></div>
+      <button class="speed" id="speedBtn" title="Playback speed">1×</button>
+      <span class="clock" id="clock">--:--</span>
+    </div>
     <div class="nobg hidden" id="nobg">
       <div>No map image yet.<br><br>Press <b>✎ Place cameras</b>, then <b>Change background</b> to upload an aerial photo of your property.</div>
     </div>
@@ -119,14 +139,26 @@
       <g id="coneLayer"></g>
       <g id="pathLayer"></g>
       <g id="camLayer"></g>
+      <g id="replayLayer"></g>
     </svg>
-    <div class="legend">
+    <div class="legend" id="legend">
       <span>Detections</span><span class="ramp"></span>
       <span><span class="sw"></span>Heard here, then there (15 s – 2 min later)</span>
     </div>
   </div>
 
   <aside>
+    <div class="card hidden" id="replayCard">
+      <h3>Replay</h3>
+      <select id="replayDay"></select>
+      <p class="muted" style="margin:10px 0 8px">Each call ripples out from its camera in the species' colour. A dotted hop shows a bird heard on one camera, then another 15 s – 2 min later.</p>
+      <div id="replayLegend"></div>
+    </div>
+    <div class="card hidden" id="feedCard">
+      <h3>Just heard</h3>
+      <div class="feed" id="feed"><p class="muted">Press ▶ to start.</p></div>
+    </div>
+
     <div class="card" id="editCard" style="display:none">
       <h3>Placing cameras</h3>
       <p class="muted">Drag a camera to move it. Drag its <b class="glare">yellow handle</b> to aim it and set how far it hears. Changes are kept only when you press <b class="glare">✓ Save</b>.</p>
@@ -141,7 +173,7 @@
       </div>
     </div>
 
-    <div class="card">
+    <div class="card std">
       <h3>Filter</h3>
       <select id="species"><option value="">All species</option></select>
       <div class="chips" id="period">
@@ -154,12 +186,12 @@
       <input type="range" id="trips" min="1" max="30" step="1">
     </div>
 
-    <div class="card">
+    <div class="card std">
       <h3>Cameras</h3>
       <div id="camList"><p class="muted">Loading…</p></div>
     </div>
 
-    <div class="card" id="detail">
+    <div class="card std" id="detail">
       <h3 id="dTitle">Camera</h3>
       <div id="dBody"><p class="muted">Select a camera.</p></div>
     </div>
@@ -225,11 +257,12 @@ const glare = (c, sun) => state.layers.sun && sun.el > 0 && sun.el < 35 && c.fov
 
 // ── Draw ─────────────────────────────────────────────────────────────────────
 function draw() {
+  if (state.replay) return drawReplay();
   const cams = layout.cameras, count = c => stats.cameras[c.name] || 0;
   const max = Math.max(1, ...cams.map(count));
   const sun = sunPos(state.time);
   const fs = W / 75;                                         // label size scales with the image
-  ['#sunLayer', '#hearLayer', '#coneLayer', '#pathLayer', '#camLayer'].forEach(s => $(s).innerHTML = '');
+  ['#sunLayer', '#hearLayer', '#coneLayer', '#pathLayer', '#camLayer', '#replayLayer'].forEach(s => $(s).innerHTML = '');
   const label = (x, y, text, parent, cls = {}) => {
     const t = el('text', Object.assign({ x, y, 'text-anchor': 'middle', 'font-size': fs, 'font-weight': 600, fill: '#fff',
       'paint-order': 'stroke', stroke: '#000c', 'stroke-width': fs / 4, 'pointer-events': 'none' }, cls), parent);
@@ -391,6 +424,7 @@ function setEdit(on) {
   $('#editBtn').classList.toggle('hidden', on);
   $('#saveBtn').classList.toggle('hidden', !on);
   $('#cancelBtn').classList.toggle('hidden', !on);
+  $('#replayBtn').classList.toggle('hidden', on);
   $('#wrap').classList.toggle('editing', on);
   draw();
 }
@@ -476,15 +510,137 @@ if (window.io) {
   socket.on('disconnect', () => { $('#status-text').textContent = 'disconnected'; $('#status-dot').classList.add('paused'); });
   let refreshTimer = null;
   socket.on('detection', d => {
+    if (state.replay && rp.data && rp.data.date === new Date().toLocaleDateString('en-CA')) {
+      const n = new Date(); rp.data.detections.push([n.getHours() * 3600 + n.getMinutes() * 60 + n.getSeconds(), d.camera, d.common_name]);
+    }
     const i = layout.cameras.findIndex(c => c.name === d.camera);
     const w = document.getElementById('w' + i);
     if (w) { w.classList.remove('flash'); void w.getBBox(); w.classList.add('flash'); }
-    if (!state.edit) toast(`${d.common_name} · ${d.camera} · ${Math.round(d.confidence * 100)}%`);
+    if (!state.edit && !state.replay) toast(`${d.common_name} · ${d.camera} · ${Math.round(d.confidence * 100)}%`);
     clearTimeout(refreshTimer);                       // several cameras often fire together
     refreshTimer = setTimeout(() => { if (!state.edit) loadStats(); }, 5000);
   });
 }
 setInterval(() => { if (!document.hidden && !state.edit) loadStats(); }, 120000);
+
+// ── Replay: play a day back, call by call ────────────────────────────────────
+const PALETTE = ['#f97316', '#f472b6', '#60a5fa', '#facc15', '#4ade80', '#c4b5fd', '#2dd4bf', '#fb7185'];
+const OTHER = '#94a3b8';
+const RIPPLE_S = 600, HOP_S = 240;              // how long a call / a hop stays on screen (day seconds)
+const SPEEDS = [1, 2, 4];                        // 1× plays a whole day in about a minute
+const rp = { data: null, t: 0, timer: null, speed: 0, colour: {}, from: 0, to: 86399, idx: 0 };
+const hhmm = sec => `${String(Math.floor(sec / 3600)).padStart(2, '0')}:${String(Math.floor(sec / 60) % 60).padStart(2, '0')}`;
+const spColour = n => rp.colour[n] || OTHER;
+
+async function loadTimeline(day) {
+  const d = await (await fetch(api('/api/map/timeline' + (day ? `?date=${day}` : '')))).json();
+  rp.data = d;
+  rp.colour = {}; d.species.slice(0, PALETTE.length).forEach(([n], i) => rp.colour[n] = PALETTE[i]);
+  const secs = d.detections.map(x => x[0]);
+  rp.from = secs.length ? Math.max(0, Math.floor((Math.min(...secs) - 1800) / 1800) * 1800) : 6 * 3600;
+  rp.to = secs.length ? Math.min(86399, Math.ceil((Math.max(...secs) + 1800) / 1800) * 1800) : 18 * 3600;
+  const sc = $('#scrub'); sc.min = rp.from; sc.max = rp.to;
+  rp.t = rp.from; sc.value = rp.t;
+  $('#replayDay').innerHTML = (d.days.length ? d.days : [d.date]).map(x =>
+    `<option value="${x}" ${x === d.date ? 'selected' : ''}>${new Date(x + 'T12:00').toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' })}</option>`).join('');
+  const shown = d.species.slice(0, PALETTE.length), rest = d.species.slice(PALETTE.length).reduce((a, [, c]) => a + c, 0);
+  $('#replayLegend').innerHTML = shown.map(([n, c]) => `<div class="leg"><i style="background:${spColour(n)}"></i>${esc(n)}<span class="n">${c}</span></div>`).join('') +
+    (rest ? `<div class="leg"><i style="background:${OTHER}"></i>Other species<span class="n">${rest}</span></div>` : '') ||
+    '<p class="muted">No detections on this day.</p>';
+  drawSpark();
+  $('#feed').innerHTML = '<p class="muted">Press ▶ to start.</p>';
+  draw();
+}
+
+function drawSpark() {                           // detections per 10 minutes, under the slider
+  const sv = $('#spark'); sv.innerHTML = '';
+  const span = rp.to - rp.from, nb = Math.max(1, Math.round(span / 600)), bins = Array(nb).fill(0);
+  rp.data.detections.forEach(([sec]) => { const b = Math.floor((sec - rp.from) / 600); if (b >= 0 && b < nb) bins[b]++; });
+  const bm = Math.max(1, ...bins), w = 1440 / nb;
+  bins.forEach((v, b) => v && el('rect', { x: b * w + w * .1, y: 32 - 30 * v / bm, width: w * .8, height: 30 * v / bm, fill: '#4ade80', opacity: .5, rx: 1 }, sv));
+}
+
+function drawReplay() {
+  ['#sunLayer', '#hearLayer', '#coneLayer', '#pathLayer', '#camLayer', '#replayLayer'].forEach(s => $(s).innerHTML = '');
+  const L = $('#replayLayer'), t = rp.t, fs = W / 75, byName = Object.fromEntries(layout.cameras.map(c => [c.name, c]));
+  const label = (x, y, text, extra = {}) => {
+    const e = el('text', Object.assign({ x, y, 'text-anchor': 'middle', 'font-size': fs, 'font-weight': 600, fill: '#fff',
+      'paint-order': 'stroke', stroke: '#000c', 'stroke-width': fs / 4, 'pointer-events': 'none' }, extra), L);
+    e.textContent = text;
+  };
+  const dets = rp.data ? rp.data.detections : [], soFar = {}, live = {};
+  for (const [sec, cam, name] of dets) {
+    if (sec > t) break;
+    soFar[cam] = (soFar[cam] || 0) + 1;
+    if (sec > t - RIPPLE_S) (live[cam] = live[cam] || []).push([sec, name]);
+  }
+  // ripples
+  Object.entries(live).forEach(([cam, list]) => {
+    const c = byName[cam]; if (!c) return;
+    const p = px(c);
+    list.slice(-6).forEach(([sec, name]) => {
+      const age = (t - sec) / RIPPLE_S;
+      el('circle', { cx: p.x, cy: p.y, r: W * (.015 + .07 * age), fill: 'none', stroke: spColour(name),
+        'stroke-width': W * (.005 * (1 - age) + .001), opacity: 1 - age }, L);
+    });
+  });
+  // hops
+  (rp.data ? rp.data.moves : []).forEach(([sec, from, to, name]) => {
+    if (sec > t || sec <= t - HOP_S) return;
+    const A = byName[from], B = byName[to]; if (!A || !B) return;
+    const a = px(A), b = px(B), age = (t - sec) / HOP_S, dx = b.x - a.x, dy = b.y - a.y, Ln = Math.hypot(dx, dy) || 1;
+    const bow = Math.min(Ln * .3, W / 15), cx = (a.x + b.x) / 2 - dy / Ln * bow, cy = (a.y + b.y) / 2 + dx / Ln * bow;
+    el('path', { d: `M${a.x},${a.y} Q${cx},${cy} ${b.x},${b.y}`, fill: 'none', stroke: spColour(name), 'stroke-width': W / 220,
+      'stroke-linecap': 'round', 'stroke-dasharray': `1 ${W / 80}`, opacity: 1 - age, 'marker-end': 'url(#arrow)' }, L);
+  });
+  // cameras and running totals
+  layout.cameras.forEach(c => {
+    const p = px(c), on = !!live[c.name];
+    el('circle', { cx: p.x, cy: p.y, r: W / 90, fill: on ? spColour(live[c.name].at(-1)[1]) : '#1a1d27', stroke: '#fff', 'stroke-width': W / 500 }, L);
+    label(p.x, p.y - W / 60, c.name);
+    label(p.x, p.y + W / 35, (soFar[c.name] || 0).toLocaleString(), { fill: '#bbf7d0', 'font-size': fs * .85 });
+  });
+  $('#clock').textContent = hhmm(t);
+  $('#compassN').style.transform = `rotate(${-layout.north}deg)`;
+}
+
+function updateFeed() {
+  const dets = rp.data ? rp.data.detections : [];
+  let i = dets.length; while (i > 0 && dets[i - 1][0] > rp.t) i--;
+  const last = dets.slice(Math.max(0, i - 7), i).reverse();
+  $('#feed').innerHTML = last.length ? last.map(([sec, cam, name]) =>
+    `<div><span class="tm">${hhmm(sec)}</span><span style="color:${spColour(name)}">●</span><span>${esc(name)} · ${esc(cam)}</span></div>`).join('')
+    : '<p class="muted">Nothing yet at this time.</p>';
+}
+
+function stopPlay() { clearInterval(rp.timer); rp.timer = null; $('#playBtn').textContent = '▶'; }
+function startPlay() {
+  if (rp.t >= rp.to) rp.t = rp.from;
+  $('#playBtn').textContent = '❚❚';
+  const step = () => (rp.to - rp.from) / 900 * SPEEDS[rp.speed];      // ~900 frames per run at 1×
+  rp.timer = setInterval(() => {
+    rp.t = Math.min(rp.to, rp.t + step());
+    $('#scrub').value = rp.t; drawReplay(); updateFeed();
+    if (rp.t >= rp.to) stopPlay();
+  }, 66);
+}
+$('#playBtn').onclick = () => rp.timer ? stopPlay() : startPlay();
+$('#speedBtn').onclick = () => { rp.speed = (rp.speed + 1) % SPEEDS.length; $('#speedBtn').textContent = SPEEDS[rp.speed] + '×'; };
+$('#scrub').oninput = e => { rp.t = +e.target.value; drawReplay(); updateFeed(); };
+$('#replayDay').onchange = e => { stopPlay(); loadTimeline(e.target.value); };
+
+function setReplay(on) {
+  state.replay = on; stopPlay();
+  $('#replayBtn').textContent = on ? '■ Exit replay' : '▶ Replay';
+  $('#replayBtn').classList.toggle('on', on);
+  ['#player', '#replayCard', '#feedCard'].forEach(s => $(s).classList.toggle('hidden', !on));
+  $('#legend').classList.toggle('hidden', on);
+  document.querySelectorAll('.std').forEach(c => c.classList.toggle('hidden', on));
+  document.querySelectorAll('[data-layer], #editBtn').forEach(b => b.classList.toggle('hidden', on));
+  $('#sunCard').classList.toggle('hidden', on || !state.layers.sun);
+  if (on) loadTimeline(); else draw();
+}
+$('#replayBtn').onclick = () => setReplay(!state.replay);
 
 // ── Start ────────────────────────────────────────────────────────────────────
 (async () => {
