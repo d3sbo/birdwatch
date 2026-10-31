@@ -96,6 +96,16 @@ If you'd rather not run that listener, use the soft pause/resume nodes instead: 
 - **HA sensor** `sensor.last_bird_detected` updated on every detection
 - **Soft pause/resume** via the `/api/control` REST endpoint
 
+### Camera audio health
+
+Birdwatch checks every camera's audio every 5 minutes and warns when one has stopped hearing properly:
+
+- **No audio**: no recording has worked for 10 minutes (stream down, camera offline)
+- **Silent microphone**: recordings arrive but carry no sound (raw peak below -60 dB, measured before the volume boost)
+- **No birds**: in daylight, nothing for 2 hours while the other cameras heard at least 10 each - this catches a dead or blocked mic that only sends hiss
+
+Warnings show as a banner on the dashboard, a ⚠ on the Map page, and a "*Camera* audio problem" binary sensor per camera in Home Assistant (MQTT discovery, with the reason and mic level as attributes). `/api/health` returns the details. Thresholds can be changed with `HEALTH_NO_AUDIO_MIN`, `HEALTH_SILENT_PEAK_DB`, `HEALTH_NO_BIRDS_HOURS` and `HEALTH_BUSY_MIN`.
+
 ### Map page
 
 `/map` (or the **🗺 Map** button on the dashboard) shows your cameras on an aerial image of your property:

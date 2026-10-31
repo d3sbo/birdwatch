@@ -14,6 +14,8 @@ import time
 import logging
 from pathlib import Path
 
+import health
+
 logger = logging.getLogger(__name__)
 
 
@@ -81,14 +83,17 @@ class AudioCapture:
                 # Set AUDIO_LOUDNESS_TARGET=off to disable
                 import main as _main
                 loudness_target = getattr(_main, 'AUDIO_LOUDNESS_TARGET', os.getenv("AUDIO_LOUDNESS_TARGET", "-14"))
-                audio_filters = []
+                # astats first: measures the raw level before loudnorm boosts it,
+                # so health.py can tell a silent microphone from a quiet garden
+                audio_filters = ["astats=metadata=0"]
                 if loudness_target.lower() != "off":
                     audio_filters.append(f"loudnorm=I={loudness_target}:TP=-1.5:LRA=11")
 
                 # Build ffmpeg command — no RTSP-specific flags needed for HTTP
                 cmd = [
                     "ffmpeg",
-                    "-loglevel", "error",
+                    "-hide_banner", "-nostats",
+                    "-loglevel", "info",     # info: needed for the astats summary
                     "-i", self.camera_url,
                     "-vn",                   # audio only
                     "-acodec", "pcm_s16le",  # raw PCM — BirdNET requirement
@@ -106,8 +111,10 @@ class AudioCapture:
                     timeout=self.chunk_seconds + 30,
                 )
 
+                stderr = result.stderr.decode(errors="replace")
                 if result.returncode == 0 and output_file.exists() and output_file.stat().st_size > 0:
                     consecutive_failures = 0
+                    health.record_chunk(self.camera_name, *health.parse_levels(stderr))
                     for cb in self._callbacks:
                         try:
                             cb(str(output_file), self.camera_name)
@@ -120,7 +127,7 @@ class AudioCapture:
                         self._last_cleanup = time.time()
                         tpool.execute(self._cleanup_old_chunks)
                 else:
-                    err = result.stderr.decode(errors="replace")[:300]
+                    err = stderr[-300:]          # the error is at the end now that the log level is 'info'
                     logger.warning(f"[{self.camera_name}] ffmpeg failed (rc={result.returncode}): {err}")
                     output_file.unlink(missing_ok=True)
                     consecutive_failures += 1

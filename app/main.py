@@ -222,6 +222,7 @@ if __name__ == "__main__":
     mqtt = None
     if MQTT_HOST:
         mqtt = MQTTClient(MQTT_HOST, MQTT_PORT, MQTT_USER, MQTT_PASSWORD, MQTT_PREFIX)
+        mqtt.health_cameras = [c["name"] for c in cameras]
         mqtt.on_command(on_mqtt_command)
         mqtt.start()
     else:
@@ -237,6 +238,12 @@ if __name__ == "__main__":
         cap.add_callback(on_audio_chunk)
         cap.start()
         _captures.append(cap)
+
+    # Watch every camera's audio and flag silent or birdless microphones (see health.py)
+    import health
+    health.start([c["name"] for c in cameras], is_paused=lambda: _paused,
+                 publish=mqtt.publish_health if mqtt else None,
+                 emit=lambda st: server.socketio.emit("health", st))
 
     # Start web server (blocks forever)
     server.run_server()

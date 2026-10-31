@@ -5,6 +5,7 @@ Publishes detections to HA and subscribes to control commands from Node-RED.
 Topics published:
   {prefix}/detection          – JSON payload for each bird detected
   {prefix}/status             – "running" | "paused"
+  {prefix}/health/<camera>    – JSON audio-health status per camera (retained)
 
 Topics subscribed:
   {prefix}/control            – "pause" | "resume" | "stop"
@@ -12,6 +13,7 @@ Topics subscribed:
 
 import json
 import logging
+import re
 import threading
 import time
 
@@ -34,6 +36,7 @@ class MQTTClient:
         self._client = None
         self._connected = False
         self._callbacks: dict[str, list] = {}
+        self.health_cameras: list[str] = []   # set by main.py: one HA problem sensor each
 
     def on_command(self, cb):
         """Register a callback for control commands: cb(command: str)"""
@@ -151,6 +154,28 @@ class MQTTClient:
             )
             logger.debug(f"📡 HA discovery: {uid}")
 
+        # One "problem" binary sensor per camera: on when its audio looks wrong
+        for cam in self.health_cameras:
+            slug = self._slug(cam)
+            uid = f"birdwatch_{slug}_audio_problem"
+            payload = {
+                "name": f"{cam} audio problem",
+                "unique_id": uid,
+                "device_class": "problem",
+                "state_topic": f"{self.prefix}/health/{slug}",
+                "value_template": "{{ 'OFF' if value_json.ok else 'ON' }}",
+                "json_attributes_topic": f"{self.prefix}/health/{slug}",
+                "json_attributes_template": "{{ {'issue': (value_json.issues | map(attribute='message') | join('; ')) or 'none',"
+                                            " 'peak_db': value_json.peak_db, 'rms_db': value_json.rms_db,"
+                                            " 'recordings_30min': value_json.recordings_30min,"
+                                            " 'detections_window': value_json.detections_window} | tojson }}",
+                "device": device,
+                "availability_topic": f"{self.prefix}/status",
+                "payload_available": "running",
+                "payload_not_available": "stopped",
+            }
+            self._client.publish(f"homeassistant/binary_sensor/{uid}/config", json.dumps(payload), qos=1, retain=True)
+
         logger.info("✅ Home Assistant MQTT discovery published")
 
     def _on_disconnect(self, client, userdata, disconnect_flags, reason_code, properties):
@@ -186,3 +211,15 @@ class MQTTClient:
             self._client.publish(f"{self.prefix}/status", status, qos=1, retain=True)
         except Exception as e:
             logger.error(f"MQTT status publish error: {e}")
+
+    @staticmethod
+    def _slug(name: str) -> str:
+        return re.sub(r"[^a-z0-9]+", "_", name.lower()).strip("_")
+
+    def publish_health(self, camera: str, status: dict):
+        if not self._connected:
+            return
+        try:
+            self._client.publish(f"{self.prefix}/health/{self._slug(camera)}", json.dumps(status), qos=1, retain=True)
+        except Exception as e:
+            logger.error(f"MQTT health publish error: {e}")

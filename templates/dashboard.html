@@ -169,6 +169,8 @@
   #feed-cap-slider::-moz-range-thumb { width:9px;height:9px;border-radius:50%;background:#4ade8066;border:none;cursor:pointer; }
   #feed-cap-slider::-moz-range-track { height:4px;border-radius:2px;background:#1a2030; }
 
+  #health-banner { display:none; margin:0 0 2px; padding:10px 14px; border:1px solid #fbbf2466; background:#fbbf2414; color:#fde68a; border-radius:10px; font-size:0.85rem; line-height:1.5; }
+  #health-banner b { color:#fbbf24; }
 </style>
 </head>
 <body>
@@ -183,6 +185,8 @@
 </header>
 
 <div class="page">
+
+  <div id="health-banner"></div>
 
   <div class="stats">
     <div class="stats-numbers">
@@ -357,6 +361,17 @@ function scheduleRefresh() {
   clearTimeout(_refreshTimer);
   _refreshTimer = setTimeout(() => { refreshSpecies(); refreshStats(); }, 3000);
 }
+// ── Camera audio health (see app/health.py) ──────────────────────────────────
+function showHealth(h) {
+  const el = document.getElementById('health-banner');
+  const bad = Object.entries((h && h.cameras) || {}).filter(([, s]) => !s.ok);
+  if (!bad.length) { el.style.display = 'none'; return; }
+  el.innerHTML = bad.map(([cam, s]) => `⚠ <b>${cam}</b>: ${s.issues.map(i => i.message).join('; ')}`).join('<br>');
+  el.style.display = 'block';
+}
+fetch('/api/health').then(r => r.json()).then(showHealth).catch(() => {});
+socket.on('health', showHealth);
+
 socket.on('detection', (data) => {
   addFeedItem(data);
   scheduleRefresh();

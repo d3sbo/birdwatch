@@ -116,6 +116,12 @@ def api_config():
     })
 
 
+@app.route("/api/health")
+def api_health():
+    import health
+    return jsonify(health.get_status())
+
+
 @app.route("/api/sightings")
 def api_sightings():
     return jsonify({"sightings": database.get_today_sightings()})
