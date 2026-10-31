@@ -276,3 +276,21 @@ def _compute_timeline(day):
     species = sorted(per_species, key=lambda n: -len(per_species[n]))
     return {"date": day, "days": days, "species": [[n, len(per_species[n])] for n in species],
             "detections": detections, "moves": moves}
+
+
+_order_cache = [0.0, []]
+
+
+def species_order(n: int = 8) -> list:
+    """The n most-detected species of all time. The Map page gives these fixed
+    colours, so a species looks the same in every view and on every day."""
+    if time.time() - _order_cache[0] < 600:
+        return _order_cache[1]
+    def q():
+        with _lock:
+            conn = sqlite3.connect(DB_PATH)
+            rows = conn.execute("SELECT common_name FROM detections GROUP BY common_name ORDER BY COUNT(*) DESC LIMIT ?", (n,)).fetchall()
+            conn.close()
+        return [r[0] for r in rows]
+    _order_cache[:] = [time.time(), tpool.execute(q)]
+    return _order_cache[1]

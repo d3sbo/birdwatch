@@ -150,7 +150,9 @@ def api_loudness():
 
 @app.route("/map")
 def map_page():
-    return render_template("map.html")
+    resp = app.make_response(render_template("map.html"))
+    resp.headers["Cache-Control"] = "no-cache"      # always pick up a new version after an update
+    return resp
 
 
 @app.route("/api/map/layout", methods=["GET", "PUT"])
@@ -199,8 +201,10 @@ def api_map_timeline():
 @app.route("/api/map/stats")
 def api_map_stats():
     import birdmap
-    return jsonify(birdmap.get_stats(request.args.get("period", "today"),
-                                     request.args.get("species") or None))
+    out = dict(birdmap.get_stats(request.args.get("period", "today"),
+                                 request.args.get("species") or None))
+    out["colour_order"] = birdmap.species_order()
+    return jsonify(out)
 
 
 # ── Run ───────────────────────────────────────────────────────────────────────

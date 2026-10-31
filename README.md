@@ -100,11 +100,11 @@ If you'd rather not run that listener, use the soft pause/resume nodes instead: 
 
 `/map` (or the **🗺 Map** button on the dashboard) shows your cameras on an aerial image of your property:
 
-- **View cones** for each camera, shaded by how many birds it has heard (filter by species and by today / 7 days / 30 days / all time)
+- **Species rings** at each camera: one ring for each of its top 3 species, thicker for more calls (filter by species and by today / 7 days / 30 days / all time). Each species keeps the same colour everywhere
+- **View cones** (optional) showing what each camera can see
 - **Hearing range** rings showing roughly how far each microphone reaches
-- **Movements**: arrows where a species was heard on one camera and then on another 15 seconds to 2 minutes later. Two mics hearing the same bird at the same moment isn't counted as a movement.
+- **Movements**: a ranked list of routes, where a species was heard on one camera and then on another 15 seconds to 2 minutes later. Pick one to draw it on the map. Two mics hearing the same bird at the same moment isn't counted.
 - **Sun glare**: which cameras face into a low sun at a given time of day (uses `LATITUDE` / `LONGITUDE`)
-- Live detections flash the camera's cone
 - **▶ Replay**: plays any day back call by call. Each detection ripples out from its camera in the species' colour, movements show as brief dotted hops, and a bar chart under the slider shows the busy times
 
 Press **✎ Place cameras** to upload a background image, drag each camera into place, aim it, set its view width and say which way north is on the image. The image and layout are stored in `/data/map` (inside the data volume), not in the repo. On first start, `/data/map/layout.json` is imported if it exists.

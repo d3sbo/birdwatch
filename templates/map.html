@@ -22,7 +22,7 @@
   .dot.paused { background:var(--warn); animation:none; }
   @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
 
-  main { display:grid; grid-template-columns:1fr 330px; gap:14px; padding:14px; max-width:1800px; margin:0 auto; }
+  main { display:grid; grid-template-columns:1fr 330px; gap:14px; padding:14px; }
   @media (max-width:900px){ main { grid-template-columns:1fr; padding:12px 16px; } }
 
   .mapwrap { align-self:start; position:relative; background:#000; border:1px solid var(--border); border-radius:10px; overflow:hidden; min-height:300px; }
@@ -71,6 +71,10 @@
   .btnrow { display:flex; gap:6px; flex-wrap:wrap; margin-top:10px; }
   .unplaced { display:flex; justify-content:space-between; align-items:center; font-size:.82rem; padding:4px 0; }
   .hidden { display:none !important; }
+  .route { display:grid; grid-template-columns:1fr 36px; gap:6px; align-items:center; font-size:.8rem; padding:6px 8px; border-radius:7px; cursor:pointer; }
+  .route:hover, .route.sel { background:var(--surface2); }
+  .route.sel { outline:1px solid #60a5fa66; }
+  .route .n { text-align:right; color:#93c5fd; font-weight:600; font-variant-numeric:tabular-nums; }
   .player { position:absolute; left:10px; right:10px; bottom:10px; background:#1a1d27ee; border:1px solid var(--border); border-radius:10px; padding:8px 12px; display:flex; gap:12px; align-items:center; z-index:2; }
   .play { width:38px; height:38px; border-radius:50%; border:1px solid var(--accent); background:transparent; color:var(--accent); font-size:1rem; cursor:pointer; flex-shrink:0; }
   .track { flex:1; position:relative; height:46px; min-width:0; }
@@ -107,9 +111,8 @@
 <main>
   <div class="mapwrap" id="wrap">
     <div class="toolbar">
-      <button class="btn on" data-layer="cones" title="Each camera's view, shaded by detections">View cones</button>
+      <button class="btn" data-layer="cones" title="What each camera can see">View cones</button>
       <button class="btn" data-layer="hearing" title="Roughly how far each microphone hears">Hearing range</button>
-      <button class="btn on" data-layer="paths" title="Heard on one camera, then another">Movements</button>
       <button class="btn" data-layer="sun" title="Cameras facing into a low sun">Sun glare</button>
       <button class="btn" id="editBtn">✎ Place cameras</button>
       <button class="btn" id="replayBtn" title="Play a day back, call by call">▶ Replay</button>
@@ -142,8 +145,7 @@
       <g id="replayLayer"></g>
     </svg>
     <div class="legend" id="legend">
-      <span>Detections</span><span class="ramp"></span>
-      <span><span class="sw"></span>Heard here, then there (15 s – 2 min later)</span>
+      <span>Rings: each camera's top 3 species · thicker = more calls</span>
     </div>
   </div>
 
@@ -182,8 +184,17 @@
         <span class="chip" data-p="month">30 days</span>
         <span class="chip" data-p="all">All time</span>
       </div>
-      <label class="sl"><span>Movement arrows: at least</span><b id="tripsLabel"></b></label>
-      <input type="range" id="trips" min="1" max="30" step="1">
+    </div>
+
+    <div class="card std">
+      <h3>Movements</h3>
+      <p class="muted" style="margin-bottom:6px">Heard on one camera, then another 15 s – 2 min later. Pick one to see it on the map.</p>
+      <div id="routeList"></div>
+    </div>
+
+    <div class="card std">
+      <h3>Species colours</h3>
+      <div id="colourList"></div>
     </div>
 
     <div class="card std">
@@ -223,9 +234,14 @@ const angDiff = (a, b) => Math.abs(((a - b + 540) % 360) - 180);
 
 let W = 1000, H = 700;                 // background image size in pixels
 let layout = { cameras: [], north: 0, latitude: 52, longitude: 0, known_cameras: [] };
-let saved = null;                      // copy of the layout while editing, for Cancel
+let saved = null;
+// Fixed colours for the all-time top 8 species, so a bird looks the same in every view and on every day
+const PALETTE = ['#f97316', '#f472b6', '#60a5fa', '#facc15', '#4ade80', '#c4b5fd', '#2dd4bf', '#fb7185'];
+const OTHER = '#94a3b8';
+let colourOrder = [];
+const spColour = n => { const i = colourOrder.indexOf(n); return i >= 0 ? PALETTE[i] : OTHER; };                      // copy of the layout while editing, for Cancel
 let stats = { cameras: {}, species: [], top: {}, moves: [] };
-const state = { period: 'today', species: '', layers: { cones: true, hearing: false, paths: true, sun: false },
+const state = { period: 'today', species: '', layers: { cones: false, hearing: false, sun: false }, route: null,
                 edit: false, sel: null, time: null };
 
 // ── Geometry (cameras are stored as fractions of the image) ─────────────────
@@ -278,41 +294,57 @@ function draw() {
   }
 
   cams.forEach((c, i) => {
-    const p = px(c), n = count(c), a = .12 + .63 * (n / max), g = glare(c, sun), sel = c.name === state.sel;
+    const p = px(c), g = glare(c, sun), sel = c.name === state.sel;
     if (state.layers.hearing)
       el('circle', { cx: p.x, cy: p.y, r: p.r, fill: 'none', stroke: 'rgba(96,165,250,.7)', 'stroke-width': W / 700, 'stroke-dasharray': `${W / 150} ${W / 200}` }, $('#hearLayer'));
     if (state.layers.cones || state.edit)
-      el('path', { d: wedgePath(c), class: 'wedge', id: 'w' + i, fill: `rgba(74,222,128,${state.edit ? .25 : a})`,
-        stroke: g ? '#fbbf24' : (sel ? '#fff' : 'rgba(255,255,255,.55)'), 'stroke-width': (g ? 3 : sel ? 2 : 1) * W / 1000,
+      el('path', { d: wedgePath(c), class: 'wedge', id: 'w' + i, fill: `rgba(255,255,255,${state.edit ? .2 : .08})`,
+        stroke: g ? '#fbbf24' : (sel ? '#fff' : 'rgba(255,255,255,.45)'), 'stroke-width': (g ? 3 : sel ? 2 : 1) * W / 1000,
         'stroke-dasharray': g ? `${W / 110} ${W / 200}` : '' }, $('#coneLayer'));
   });
 
-  if (state.layers.paths && !state.edit && stats.moves.length) {
-    const byName = Object.fromEntries(cams.map(c => [c.name, c]));
-    const pm = Math.max(...stats.moves.map(m => m.count));
-    // Loud birds are often heard on several mics, which makes plenty of weak
-    // "routes". Show only the strongest (12 at most) so the real ones stand out.
-    stats.moves.filter(m => m.count >= minTrips()).slice(0, 12).forEach(m => {
-      const A = byName[m.from], B = byName[m.to]; if (!A || !B) return;
-      const a = px(A), b = px(B), dx = b.x - a.x, dy = b.y - a.y, L = Math.hypot(dx, dy) || 1;
-      const bow = Math.min(L * .25, W / 20), cx = (a.x + b.x) / 2 - dy / L * bow, cy = (a.y + b.y) / 2 + dx / L * bow;
-      const off = W / 50;
-      el('path', { d: `M${a.x + dx / L * off},${a.y + dy / L * off} Q${cx},${cy} ${b.x - dx / L * off * 1.2},${b.y - dy / L * off * 1.2}`,
-        fill: 'none', stroke: '#60a5fa', 'stroke-width': (1.5 + 5.5 * m.count / pm) * W / 1000, 'stroke-linecap': 'round', opacity: .9,
-        'marker-end': 'url(#arrow)' }, $('#pathLayer'));
-      label(cx, cy + fs * .35, m.count, $('#pathLayer'), { fill: '#93c5fd', 'font-size': fs * .85 });
-    });
+  // The one movement picked in the sidebar list (no others are drawn)
+  const m = state.route != null && !state.edit ? stats.moves[state.route] : null;
+  const byName = Object.fromEntries(cams.map(c => [c.name, c]));
+  if (m && byName[m.from] && byName[m.to]) {
+    const a = px(byName[m.from]), b = px(byName[m.to]), dx = b.x - a.x, dy = b.y - a.y, L = Math.hypot(dx, dy) || 1;
+    const bow = Math.min(L * .22, W / 14), cx = (a.x + b.x) / 2 - dy / L * bow, cy = (a.y + b.y) / 2 + dx / L * bow;
+    const off = W / 45, d = `M${a.x + dx / L * off},${a.y + dy / L * off} Q${cx},${cy} ${b.x - dx / L * off * 1.3},${b.y - dy / L * off * 1.3}`;
+    el('path', { d, fill: 'none', stroke: '#0f1117', 'stroke-width': W / 120, opacity: .5, 'stroke-linecap': 'round' }, $('#pathLayer'));
+    el('path', { d, fill: 'none', stroke: '#93c5fd', 'stroke-width': W / 170, 'stroke-linecap': 'round', 'marker-end': 'url(#arrow)' }, $('#pathLayer'));
+    const mx = (a.x + 2 * cx + b.x) / 4, my = (a.y + 2 * cy + b.y) / 4;
+    el('circle', { cx: mx, cy: my, r: W / 70, fill: '#1e3a5f', stroke: '#93c5fd', 'stroke-width': W / 600 }, $('#pathLayer'));
+    label(mx, my + fs * .35, m.count, $('#pathLayer'), { 'stroke-width': 0 });
   }
 
+  // Species rings: one ring per top species at each camera, thicker for more calls
   cams.forEach((c, i) => {
-    const p = px(c), sel = c.name === state.sel, g = el('g', {}, $('#camLayer'));
-    el('circle', { cx: p.x, cy: p.y, r: W / 90, fill: sel ? '#4ade80' : '#1a1d27', stroke: '#fff', 'stroke-width': W / 500, class: 'camdot', 'data-i': i }, g);
-    label(p.x, p.y - W / 60, c.name, g);
-    if (!state.edit) label(p.x, p.y + W / 35, count(c).toLocaleString(), g, { fill: '#4ade80', 'font-size': fs * .85 });
+    const p = px(c), n = count(c), f = Math.sqrt(n / max), sel = c.name === state.sel, gr = el('g', {}, $('#camLayer'));
+    const dotR = W / 90;
+    let r = dotR + W / 400, rings = [];
+    if (!state.edit && n) {
+      rings = state.species ? [[state.species, n]] : (stats.top[c.name] || []).slice(0, 3);
+      const tot = state.species ? n : Math.max(1, (stats.top[c.name] || []).reduce((a, [, v]) => a + v, 0));
+      rings.forEach(([name, v]) => {
+        const w = state.species ? W * (.004 + .014 * f) : W * (.003 + .02 * (v / tot) * f);
+        r += w / 2 + W / 900;
+        el('circle', { cx: p.x, cy: p.y, r, fill: 'none', stroke: spColour(name), 'stroke-width': w, opacity: .92, 'pointer-events': 'none' }, gr);
+        r += w / 2;
+      });
+    } else if (!state.edit) {
+      el('circle', { cx: p.x, cy: p.y, r: dotR * 2, fill: 'none', stroke: '#64748b', 'stroke-width': W / 600, 'stroke-dasharray': `${W / 300} ${W / 300}` }, gr);
+      r = dotR * 2;
+    }
+    el('circle', { cx: p.x, cy: p.y, r: dotR, fill: sel ? '#4ade80' : '#0f1117', stroke: '#fff', 'stroke-width': W / 600, class: 'camdot', 'data-i': i }, gr);
+    label(p.x, p.y - r - fs * .45, c.name, gr);
+    if (!state.edit) {
+      const top = rings[0] && !state.species ? ' · ' + rings[0][0].replace(/^(European|Common|Eurasian|Ring-necked|Northern) /, '') : '';
+      label(p.x, p.y + r + fs * 1.05, n ? n.toLocaleString() + top : 'quiet', gr, { fill: n ? '#d1fae5' : '#94a3b8', 'font-size': fs * .8, 'font-weight': 500 });
+    }
     if (state.edit) {
       const [hx, hy] = tip(c);
-      el('line', { x1: p.x, y1: p.y, x2: hx, y2: hy, stroke: '#fbbf24', 'stroke-width': W / 700, 'stroke-dasharray': `${W / 250} ${W / 250}`, 'pointer-events': 'none' }, g);
-      el('circle', { cx: hx, cy: hy, r: W / 110, fill: '#fbbf24', stroke: '#000', 'stroke-width': W / 700, class: 'handle', 'data-h': i }, g);
+      el('line', { x1: p.x, y1: p.y, x2: hx, y2: hy, stroke: '#fbbf24', 'stroke-width': W / 700, 'stroke-dasharray': `${W / 250} ${W / 250}`, 'pointer-events': 'none' }, gr);
+      el('circle', { cx: hx, cy: hy, r: W / 110, fill: '#fbbf24', stroke: '#000', 'stroke-width': W / 700, class: 'handle', 'data-h': i }, gr);
     }
   });
 
@@ -322,6 +354,13 @@ function draw() {
 
 function drawSidebar(sun, max) {
   const cams = layout.cameras;
+  $('#routeList').innerHTML = stats.moves.length ? stats.moves.slice(0, 10).map((m, i) =>
+    `<div class="route ${i === state.route ? 'sel' : ''}" data-r="${i}"><span>${esc(m.from)} → ${esc(m.to)}</span><span class="n">${m.count}</span></div>`).join('')
+    : '<p class="muted">None yet for this period.</p>';
+  const inUse = new Set(Object.values(stats.top).flatMap(t => t.slice(0, 3).map(([n]) => n)));
+  const shownCols = colourOrder.filter(n => inUse.has(n) || stats.species.some(([s]) => s === n)).slice(0, 8);
+  $('#colourList').innerHTML = shownCols.map(n => `<div class="leg"><i style="background:${spColour(n)}"></i>${esc(n)}</div>`).join('') +
+    `<div class="leg"><i style="background:${OTHER}"></i>Other species</div>`;
   $('#camList').innerHTML = cams.length ? cams.map(c => {
     const n = stats.cameras[c.name] || 0;
     return `<div class="row ${c.name === state.sel ? 'sel' : ''}" data-name="${esc(c.name)}"><span class="nm">${esc(c.name)}${glare(c, sun) ? ' <span class="glare">☀</span>' : ''}</span>
@@ -375,37 +414,28 @@ async function loadLayout() {
   if (!state.sel && layout.cameras.length) state.sel = layout.cameras[0].name;
 }
 
-let tripsTouched = false;
-const minTrips = () => +$('#trips').value || 1;
-function autoTrips() {        // default: a quarter of the busiest route, never below 3
-  const pm = Math.max(0, ...stats.moves.map(m => m.count));
-  const el = $('#trips'); el.max = Math.max(5, pm);
-  if (!tripsTouched) el.value = Math.min(pm || 1, Math.max(3, Math.ceil(pm * .25)));
-  const shown = stats.moves.filter(m => m.count >= minTrips()).slice(0, 12).length;
-  $('#tripsLabel').textContent = `${minTrips()} trip${minTrips() === 1 ? '' : 's'} · ${shown} of ${stats.moves.length} routes`;
-}
-$('#trips').oninput = () => { tripsTouched = true; autoTrips(); draw(); };
 let statsBusy = false;
 async function loadStats() {
   if (statsBusy) return; statsBusy = true;
   try {
     const q = `?period=${state.period}` + (state.species ? `&species=${encodeURIComponent(state.species)}` : '');
     stats = await (await fetch(api('/api/map/stats' + q))).json();
+    if (stats.colour_order) colourOrder = stats.colour_order;
     const sel = $('#species'), cur = state.species;
     sel.innerHTML = '<option value="">All species</option>' +
       stats.species.map(([n, c]) => `<option value="${esc(n)}" ${n === cur ? 'selected' : ''}>${esc(n)} (${c.toLocaleString()})</option>`).join('');
     if (cur && !stats.species.some(([n]) => n === cur)) sel.insertAdjacentHTML('beforeend', `<option value="${esc(cur)}" selected>${esc(cur)} (0)</option>`);
   } catch (e) { console.warn('map stats', e); }
   statsBusy = false;
-  autoTrips();
+  if (state.route != null && !stats.moves[state.route]) state.route = null;
   draw();
 }
 
 // ── Controls ─────────────────────────────────────────────────────────────────
-$('#species').onchange = e => { state.species = e.target.value; tripsTouched = false; loadStats(); };
+$('#species').onchange = e => { state.species = e.target.value; state.route = null; loadStats(); };
 $('#period').onclick = e => {
   const p = e.target.dataset.p; if (!p) return;
-  state.period = p; tripsTouched = false; document.querySelectorAll('#period .chip').forEach(c => c.classList.toggle('on', c.dataset.p === p)); loadStats();
+  state.period = p; state.route = null; document.querySelectorAll('#period .chip').forEach(c => c.classList.toggle('on', c.dataset.p === p)); loadStats();
 };
 document.querySelectorAll('[data-layer]').forEach(b => b.onclick = () => {
   const k = b.dataset.layer; state.layers[k] = !state.layers[k]; b.classList.toggle('on', state.layers[k]);
@@ -413,6 +443,8 @@ document.querySelectorAll('[data-layer]').forEach(b => b.onclick = () => {
   if (k === 'sun' && state.layers.sun) { const d = new Date(); state.time = d.getHours() * 60 + d.getMinutes(); $('#time').value = state.time; }
   draw();
 });
+$('#routeList').onclick = e => { const r = e.target.closest('.route'); if (!r) return;
+  state.route = state.route === +r.dataset.r ? null : +r.dataset.r; draw(); };
 $('#camList').onclick = e => { const r = e.target.closest('.row'); if (r) { state.sel = r.dataset.name; draw(); } };
 $('#time').oninput = e => { state.time = +e.target.value; draw(); };
 $('#fov').oninput = e => { const c = layout.cameras.find(c => c.name === state.sel); if (c) { c.fov = +e.target.value; draw(); } };
@@ -524,18 +556,14 @@ if (window.io) {
 setInterval(() => { if (!document.hidden && !state.edit) loadStats(); }, 120000);
 
 // ── Replay: play a day back, call by call ────────────────────────────────────
-const PALETTE = ['#f97316', '#f472b6', '#60a5fa', '#facc15', '#4ade80', '#c4b5fd', '#2dd4bf', '#fb7185'];
-const OTHER = '#94a3b8';
 const RIPPLE_S = 600, HOP_S = 240;              // how long a call / a hop stays on screen (day seconds)
 const SPEEDS = [1, 2, 4];                        // 1× plays a whole day in about a minute
 const rp = { data: null, t: 0, timer: null, speed: 0, colour: {}, from: 0, to: 86399, idx: 0 };
 const hhmm = sec => `${String(Math.floor(sec / 3600)).padStart(2, '0')}:${String(Math.floor(sec / 60) % 60).padStart(2, '0')}`;
-const spColour = n => rp.colour[n] || OTHER;
 
 async function loadTimeline(day) {
   const d = await (await fetch(api('/api/map/timeline' + (day ? `?date=${day}` : '')))).json();
   rp.data = d;
-  rp.colour = {}; d.species.slice(0, PALETTE.length).forEach(([n], i) => rp.colour[n] = PALETTE[i]);
   const secs = d.detections.map(x => x[0]);
   rp.from = secs.length ? Math.max(0, Math.floor((Math.min(...secs) - 1800) / 1800) * 1800) : 6 * 3600;
   rp.to = secs.length ? Math.min(86399, Math.ceil((Math.max(...secs) + 1800) / 1800) * 1800) : 18 * 3600;
@@ -543,7 +571,7 @@ async function loadTimeline(day) {
   rp.t = rp.from; sc.value = rp.t;
   $('#replayDay').innerHTML = (d.days.length ? d.days : [d.date]).map(x =>
     `<option value="${x}" ${x === d.date ? 'selected' : ''}>${new Date(x + 'T12:00').toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' })}</option>`).join('');
-  const shown = d.species.slice(0, PALETTE.length), rest = d.species.slice(PALETTE.length).reduce((a, [, c]) => a + c, 0);
+  const shown = d.species.filter(([n]) => colourOrder.includes(n)), rest = d.species.filter(([n]) => !colourOrder.includes(n)).reduce((a, [, c]) => a + c, 0);
   $('#replayLegend').innerHTML = shown.map(([n, c]) => `<div class="leg"><i style="background:${spColour(n)}"></i>${esc(n)}<span class="n">${c}</span></div>`).join('') +
     (rest ? `<div class="leg"><i style="background:${OTHER}"></i>Other species<span class="n">${rest}</span></div>` : '') ||
     '<p class="muted">No detections on this day.</p>';
